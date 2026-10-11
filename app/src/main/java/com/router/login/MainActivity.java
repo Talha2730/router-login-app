@@ -44,6 +44,7 @@ public class MainActivity extends Activity {
     private boolean showingSection = false;
     private boolean initialDashboardShown = false;
     private String bridgeSource;
+    private String mobileLoginSource;
     private final LinkedHashMap<String, TextView> quickValues = new LinkedHashMap<>();
     private TextView quickStatusMessage;
 
@@ -62,6 +63,19 @@ public class MainActivity extends Activity {
             bridgeSource = new String(buffer.toByteArray(), StandardCharsets.UTF_8);
         } catch (Exception e) {
             bridgeSource = "";
+        }
+        // Read the separate, visual-only login page enhancement.
+        // It never extracts or stores usernames and passwords.
+        try {
+            InputStream input = getAssets().open("mobile_login.js");
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] data = new byte[4096];
+            int count;
+            while ((count = input.read(data)) != -1) buffer.write(data, 0, count);
+            input.close();
+            mobileLoginSource = new String(buffer.toByteArray(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            mobileLoginSource = "";
         }
         buildLayout();
         configureWebView();
@@ -115,8 +129,8 @@ public class MainActivity extends Activity {
         LinearLayout heading = vertical();
         heading.setPadding(dp(11), 0, 0, 0);
         top.addView(heading, new LinearLayout.LayoutParams(0, -2, 1f));
-        heading.addView(text("D-Link WiFi", 19, Color.WHITE, true));
-        TextView subtitle = text("ROUTER CONTROL", 10, Color.rgb(210, 245, 250), false);
+        heading.addView(text("D-Link WiFi", 22, Color.WHITE, true));
+        TextView subtitle = text("ROUTER CONTROL", 11, Color.rgb(210, 245, 250), true);
         heading.addView(subtitle);
 
         Button exit = new Button(this);
@@ -134,9 +148,9 @@ public class MainActivity extends Activity {
         home.setPadding(dp(16), dp(25), dp(16), dp(18));
         dashboard.addView(home);
 
-        TextView dashboardTitle = text("Router Dashboard", 24, INK, true);
+        TextView dashboardTitle = text("Router Dashboard", 27, INK, true);
         home.addView(dashboardTitle);
-        TextView dashboardHint = text("Tap a section to open its controls", 13, Color.rgb(95, 114, 124), false);
+        TextView dashboardHint = text("Tap a section to open its controls", 14, Color.rgb(69, 90, 104), true);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, -2);
         hintParams.topMargin = dp(5);
         hintParams.bottomMargin = dp(14);
@@ -213,7 +227,7 @@ public class MainActivity extends Activity {
         panel.setPadding(dp(14), dp(14), dp(14), dp(14));
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(text("Quick Router Status", 18, INK, true),
+        header.addView(text("Quick Router Status", 20, INK, true),
             new LinearLayout.LayoutParams(0, -2, 1f));
         Button refresh = new Button(this);
         refresh.setText("Refresh");
@@ -225,7 +239,7 @@ public class MainActivity extends Activity {
         refresh.setOnClickListener(v -> refreshQuickStatus(true));
         panel.addView(header);
 
-        quickStatusMessage = text("Reading router status...", 12,
+        quickStatusMessage = text("Reading router status...", 13,
             Color.rgb(104, 125, 135), false);
         LinearLayout.LayoutParams messageParams =
             new LinearLayout.LayoutParams(-1, -2);
@@ -257,7 +271,7 @@ public class MainActivity extends Activity {
 
     private LinearLayout.LayoutParams quickTileParams(boolean right) {
         LinearLayout.LayoutParams result =
-            new LinearLayout.LayoutParams(0, dp(69), 1f);
+            new LinearLayout.LayoutParams(0, dp(79), 1f);
         if (right) result.leftMargin = dp(9);
         return result;
     }
@@ -266,8 +280,8 @@ public class MainActivity extends Activity {
         LinearLayout tile = vertical();
         tile.setPadding(dp(12), dp(9), dp(7), dp(7));
         tile.setBackground(shape(PALE, 10, BORDER));
-        tile.addView(text(label, 11, Color.rgb(93, 111, 121), false));
-        TextView value = text("—", 15, INK, true);
+        tile.addView(text(label, 12, Color.rgb(58, 80, 94), true));
+        TextView value = text("—", 18, INK, true);
         value.setSingleLine(true);
         value.setEllipsize(android.text.TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams valueParams =
@@ -338,7 +352,7 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams cardParams(boolean right) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(131), 1f);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(142), 1f);
         if (right) lp.leftMargin = dp(12);
         return lp;
     }
@@ -357,8 +371,8 @@ public class MainActivity extends Activity {
         card.addView(icon, new LinearLayout.LayoutParams(dp(30), dp(30)));
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
         titleParams.topMargin = dp(8);
-        card.addView(text(title, 17, INK, true), titleParams);
-        card.addView(text(description, 11, Color.rgb(112, 126, 134), false));
+        card.addView(text(title, 19, INK, true), titleParams);
+        card.addView(text(description, 12, Color.rgb(83, 102, 114), true));
         card.setContentDescription("Open " + title);
         card.setOnClickListener(v -> openSection(title));
         return card;
@@ -397,6 +411,11 @@ public class MainActivity extends Activity {
     private void onRouterPageFinished(WebView view, String url) {
         if (view != web) return;
         fitPageToScreen();
+        // Readability enhancement is scoped strictly to the router login page.
+        if (url != null && url.toLowerCase(Locale.US).contains("/login")
+                && mobileLoginSource != null && !mobileLoginSource.isEmpty()) {
+            view.evaluateJavascript(mobileLoginSource, null);
+        }
         if (bridgeSource.isEmpty()) return;
         view.evaluateJavascript(bridgeSource, result -> {
             if (web != view) return;
