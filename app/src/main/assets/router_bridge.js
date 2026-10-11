@@ -6,7 +6,7 @@
   var previousDisplay = "";
 
   function normalize(s) {
-    return String(s || "").replace(/\\s+/g, " ").trim().toLowerCase();
+    return String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
   function docs() {
