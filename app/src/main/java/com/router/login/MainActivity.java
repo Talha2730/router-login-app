@@ -272,6 +272,8 @@ public class MainActivity extends Activity {
         web.evaluateJavascript("window.DLinkBridge && window.DLinkBridge.open('Home')", result -> {
             if (!"true".equals(result)) web.reload();
             web.postDelayed(this::fitPageToScreen, 400);
+            web.postDelayed(this::emphasizeLiveStatus, 650);
+            web.postDelayed(this::emphasizeLiveStatus, 1400);
         });
     }
 
@@ -393,6 +395,13 @@ public class MainActivity extends Activity {
         attachWebToMainScreen();
     }
 
+    private void emphasizeLiveStatus() {
+        if (authenticated && !showingSection && web != null) {
+            web.evaluateJavascript(
+                "window.DLinkBridge && window.DLinkBridge.styleStatus()", null);
+        }
+    }
+
     private void showDashboard() {
         showingSection = false;
         attachWebToDashboard();
@@ -400,6 +409,8 @@ public class MainActivity extends Activity {
         contentToolbar.setVisibility(View.GONE);
         webHolder.setVisibility(View.VISIBLE);
         dashboard.smoothScrollTo(0, 0);
+        web.postDelayed(this::emphasizeLiveStatus, 250);
+        web.postDelayed(this::emphasizeLiveStatus, 1100);
     }
 
     private void openSection(String section) {
