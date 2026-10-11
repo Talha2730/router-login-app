@@ -623,13 +623,20 @@ public class MainActivity extends Activity {
                             populated++;
                         }
                     }
-                    if (populated > 0) {
+                    // Do not call the native cards "working" merely because
+                    // one incidental label matched. Require a useful group of
+                    // status fields before hiding the proven original view.
+                    boolean coreFound =
+                        !values.optString("signal", "").isEmpty()
+                        || !values.optString("network", "").isEmpty()
+                        || !values.optString("clients", "").isEmpty();
+                    if (populated >= 3 && coreFound) {
                         statusReadSuccessfully = true;
                         mobileStatusMessage.setText("Live values from D-Link router");
                         if (inlineOriginalFallback) setInlineOriginalFallback(false);
                     } else {
                         mobileStatusMessage.setText(
-                            "Waiting for live status; original page opens automatically if unavailable.");
+                            "Waiting for router readings; original page will open if needed.");
                     }
                 } catch (Exception ignored) {
                     mobileStatusMessage.setText(
