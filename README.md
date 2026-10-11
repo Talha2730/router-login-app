@@ -1,19 +1,24 @@
-# D-Link WiFi v1.7 — Compact mobile dashboard
+# D-Link WiFi v1.8 — Full Live Home & reliable navigation
 
-A small Android WebView application for the D-Link DWR-M960 at `http://192.168.0.1/login.htm`.
+Lightweight Android app for the local D-Link DWR-M960 router.
 
-## v1.7 changes
+Login address: `http://192.168.0.1/login.htm`
+Authenticated router Home address (confirmed in browser screenshot): `http://192.168.0.1/main.html`
 
-- Removed three redundant labels from the dashboard: **Router Dashboard**, **Your live router home and controls**, and **Live Router Status**.
-- Preserved the **actual live Home page** shown by the router, with its real signal, connected-client count, mobile network status, carrier, LTE band and uptime.
-- Added conservative bold styling for the router's status tables (label/value text) to make the original status screen clearer without changing authentication or router configuration.
-- Reduced blank space above the status page, sized the embedded Home view relative to the display height, and made the Settings / Features / Management cards more compact so they fit on typical phone screens. Vertical scrolling remains available on smaller phones.
-- Kept the **Refresh**, **Logout**, **Exit**, D-Link WiFi launcher icon/name and disabled pinch-to-zoom.
+## Changes in 1.8
 
-## Download
+- Made the live router Home view taller on phone screens, so Signal, Internet, Connected Clients, LTE Band, Provider and Connection Uptime are easier to view.
+- Moved **Settings**, **Features**, and **Management** underneath the larger live Home area. The main dashboard remains vertically scrollable.
+- Replaced the **Log out of router** button with a bold **Home** button, with extra spacing below the controls.
+- Changed the in-section **‹ Menu** button to **‹ Home**.
+- Fixed Android Back, section back, Home, and Refresh navigation: they now reload the actual router `main.html` Home page instead of displaying a previously selected Settings/Features/Management page. In addition to page-load detection there is a fallback if the router switches content asynchronously.
+- Increased font weight and font size of the router's original signal, connected-client and status-table values where supported by its HTML.
+- Kept the original D-Link WiFi launcher icon and app name, and kept pinch-to-zoom disabled.
 
-GitHub → Actions → most recent successful **Build Router Login APK** → Artifacts → **Router-Login-APK** → extract `app-debug.apk`.
+The app does not read/store router passwords or change router configuration on its own. The Home button **does not log out** of the router session; Exit closes the Android app.
 
-The app runs locally and needs a connection to the router's Wi-Fi. GitHub is only used to create the APK. The live page layout and font changes should be checked on the actual phone; some router firmware versions use different markup.
+## Build & install
 
-If installing over an older GitHub debug APK causes a signing conflict, uninstall the older application first.
+GitHub → Actions → latest successful **Build Router Login APK** → **Artifacts** → **Router-Login-APK** → extract `app-debug.apk`.
+
+Connect your phone to the same router's Wi-Fi. The router admin pages are only reachable on the local network. As the router firmware cannot be accessed from GitHub's build environment, verify that returning Home works on your device. If signing certificates differ from a previous debug APK, uninstall the previous app before installing the update.
