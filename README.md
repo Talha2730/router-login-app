@@ -1,32 +1,30 @@
-# D-Link WiFi v1.9 — Automatic Router Reconnect
+# D-Link WiFi v2.0 — Updated Android security target
 
-Lightweight Android Wi-Fi router control app for the D-Link DWR-M960.
+This lightweight Android app opens your local D-Link DWR-M960 router:
+- Login: `http://192.168.0.1/login.htm`
+- Live dashboard: `http://192.168.0.1/main.html`
 
-- Local login: `http://192.168.0.1/login.htm`
-- Authenticated Home: `http://192.168.0.1/main.html`
+## Security update in v2.0
 
-## New in v1.9: automatic reconnect
+The earlier build targeted Android 9 (SDK 28). On modern phones, Google Play Protect displayed **"Unsafe app blocked — This app was built for an older version of Android"**. This release fixes the obsolete target rather than attempting to turn off or bypass Play Protect:
 
-When **D-Link Wi-Fi disconnects** while this app is open, a small status strip indicates the app is waiting to reconnect. The Android app:
-1. Watches Wi-Fi network arrival/loss events, including Wi-Fi networks **without Internet access**.
-2. Checks the local router's HTTP endpoint in the background, with short timeouts, every 12 seconds while the app is on screen; it never tries to use the public Internet to detect this router.
-3. When the router responds again, automatically reloads the correct page (no manual Refresh required).
-4. If the previous router login session remains valid, automatically opens the **live Home dashboard**. Otherwise the router's normal **Login** screen is displayed so the user can sign in safely.
-5. Rechecks upon returning to the app from the background.
+- **targetSdk 35** (Android 15), minSdk 23.
+- Restricts unencrypted HTTP to the **one local router address**, `192.168.0.1`, using Android Network Security Configuration. Other HTTP hosts are blocked by policy. The router itself only provides its admin page over local HTTP; credentials still travel without HTTPS encryption within the local network.
+- Handles modern Android 15 edge-to-edge status/navigation bar insets so touch controls are not obscured.
+- GitHub Actions checks that the built APK really targets API 35 and verifies its debug signature before uploading it.
 
-When Android considers mobile data the default route, the app attempts to route its own connections through the connected Wi-Fi network so `192.168.0.1` continues to work.
+## Unchanged functionality
 
-### Preserved
-- Larger native Live Home page for viewing **Signal**, **Connected Clients**, **Network Status**, **Provider**, and **Uptime**.
-- Settings, Features, Management buttons below the live dashboard.
-- Home button, Refresh, and Exit.
-- Bold status text, D-Link WiFi name and existing logo.
-- Pinch-to-zoom disabled.
+- Automatic local Wi-Fi reconnection while the app is open.
+- Show the real signal strength, connected clients, network status, LTE band and uptime on the live dashboard.
+- Settings, Features and Management controls below the live dashboard.
+- Home and Refresh buttons, Exit and D-Link WiFi launcher logo.
+- Mobile fixed-width layout with pinch zoom disabled.
 
-### Notes
-Auto-reconnect runs while the app is **open/on screen**, and checks connectivity again when the app is reopened. It does not start the Android app automatically in the background. A router authentication session that expires requires signing in again; the app does not store login passwords.
+## APK installation
 
-## Build and install APK
-Open [GitHub Actions](https://github.com/talhakalwal21/router-login-app/actions), choose the latest successful **Build Router Login APK**, then **Artifacts → Router-Login-APK** and extract `app-debug.apk`.
+Open [GitHub Actions](https://github.com/talhakalwal21/router-login-app/actions), choose the **latest successful** Build Router Login APK run, and download **Artifacts → Router-Login-APK**. Extract `app-debug.apk` and install it.
 
-Build/installation can be performed entirely online; Android Studio is not required on a laptop. The real D-Link router behavior must be verified on a device connected to the router Wi-Fi.
+**Important:** An APK built by GitHub Actions is still a **debug-signed, sideloaded app**, not a Google Play-distributed verified release. Targeting API 35 addresses the *old Android version* warning, but Google Play Protect may still apply other security checks. Do **not** disable Play Protect. If an APK raises another warning, inspect that warning rather than bypassing it.
+
+GitHub-hosted builds may use different debug signing keys between runs; if Android refuses to update the existing installation, uninstall the older D-Link WiFi app, then install the new APK. No laptop Android Studio installation is needed.
