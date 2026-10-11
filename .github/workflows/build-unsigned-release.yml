@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/build-unsigned-release.yml'
+      - 'app/**'
+      - 'settings.gradle'
+      - 'build.gradle'
 
 permissions:
   contents: read
