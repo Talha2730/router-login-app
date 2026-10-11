@@ -545,7 +545,7 @@ public class MainActivity extends Activity {
         try {
             // Display an estimate of one to five signal bars from real
             // router signal strength, never a hardcoded live reading.
-            Matcher dbmMatch = Pattern.compile("(-?\\\\d{1,3})\\\\s*dBm",
+            Matcher dbmMatch = Pattern.compile("(-?\\d{1,3})\\s*dBm",
                 Pattern.CASE_INSENSITIVE).matcher(rawValue);
             if (dbmMatch.find()) {
                 int dbm = Integer.parseInt(dbmMatch.group(1));
@@ -555,7 +555,7 @@ public class MainActivity extends Activity {
                 else if (dbm <= -75) count = 4;
                 else count = 5;
             } else {
-                Matcher percentage = Pattern.compile("(\\\\d{1,3})\\\\s*%")
+                Matcher percentage = Pattern.compile("(\\d{1,3})\\s*%")
                     .matcher(rawValue);
                 if (percentage.find()) {
                     int percent = Integer.parseInt(percentage.group(1));
