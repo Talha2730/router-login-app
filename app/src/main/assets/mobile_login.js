@@ -21,6 +21,7 @@
       }
     }
     if (!panel) return false;
+    if (panel.getAttribute('data-dlink-mobile-login') === 'true') return true;
 
     var box = panel.getBoundingClientRect();
     var viewport = document.querySelector('meta[name="viewport"]');
