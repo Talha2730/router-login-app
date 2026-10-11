@@ -1,24 +1,32 @@
-# D-Link WiFi v1.8 — Full Live Home & reliable navigation
+# D-Link WiFi v1.9 — Automatic Router Reconnect
 
-Lightweight Android app for the local D-Link DWR-M960 router.
+Lightweight Android Wi-Fi router control app for the D-Link DWR-M960.
 
-Login address: `http://192.168.0.1/login.htm`
-Authenticated router Home address (confirmed in browser screenshot): `http://192.168.0.1/main.html`
+- Local login: `http://192.168.0.1/login.htm`
+- Authenticated Home: `http://192.168.0.1/main.html`
 
-## Changes in 1.8
+## New in v1.9: automatic reconnect
 
-- Made the live router Home view taller on phone screens, so Signal, Internet, Connected Clients, LTE Band, Provider and Connection Uptime are easier to view.
-- Moved **Settings**, **Features**, and **Management** underneath the larger live Home area. The main dashboard remains vertically scrollable.
-- Replaced the **Log out of router** button with a bold **Home** button, with extra spacing below the controls.
-- Changed the in-section **‹ Menu** button to **‹ Home**.
-- Fixed Android Back, section back, Home, and Refresh navigation: they now reload the actual router `main.html` Home page instead of displaying a previously selected Settings/Features/Management page. In addition to page-load detection there is a fallback if the router switches content asynchronously.
-- Increased font weight and font size of the router's original signal, connected-client and status-table values where supported by its HTML.
-- Kept the original D-Link WiFi launcher icon and app name, and kept pinch-to-zoom disabled.
+When **D-Link Wi-Fi disconnects** while this app is open, a small status strip indicates the app is waiting to reconnect. The Android app:
+1. Watches Wi-Fi network arrival/loss events, including Wi-Fi networks **without Internet access**.
+2. Checks the local router's HTTP endpoint in the background, with short timeouts, every 12 seconds while the app is on screen; it never tries to use the public Internet to detect this router.
+3. When the router responds again, automatically reloads the correct page (no manual Refresh required).
+4. If the previous router login session remains valid, automatically opens the **live Home dashboard**. Otherwise the router's normal **Login** screen is displayed so the user can sign in safely.
+5. Rechecks upon returning to the app from the background.
 
-The app does not read/store router passwords or change router configuration on its own. The Home button **does not log out** of the router session; Exit closes the Android app.
+When Android considers mobile data the default route, the app attempts to route its own connections through the connected Wi-Fi network so `192.168.0.1` continues to work.
 
-## Build & install
+### Preserved
+- Larger native Live Home page for viewing **Signal**, **Connected Clients**, **Network Status**, **Provider**, and **Uptime**.
+- Settings, Features, Management buttons below the live dashboard.
+- Home button, Refresh, and Exit.
+- Bold status text, D-Link WiFi name and existing logo.
+- Pinch-to-zoom disabled.
 
-GitHub → Actions → latest successful **Build Router Login APK** → **Artifacts** → **Router-Login-APK** → extract `app-debug.apk`.
+### Notes
+Auto-reconnect runs while the app is **open/on screen**, and checks connectivity again when the app is reopened. It does not start the Android app automatically in the background. A router authentication session that expires requires signing in again; the app does not store login passwords.
 
-Connect your phone to the same router's Wi-Fi. The router admin pages are only reachable on the local network. As the router firmware cannot be accessed from GitHub's build environment, verify that returning Home works on your device. If signing certificates differ from a previous debug APK, uninstall the previous app before installing the update.
+## Build and install APK
+Open [GitHub Actions](https://github.com/talhakalwal21/router-login-app/actions), choose the latest successful **Build Router Login APK**, then **Artifacts → Router-Login-APK** and extract `app-debug.apk`.
+
+Build/installation can be performed entirely online; Android Studio is not required on a laptop. The real D-Link router behavior must be verified on a device connected to the router Wi-Fi.
