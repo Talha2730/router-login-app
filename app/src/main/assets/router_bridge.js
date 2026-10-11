@@ -245,10 +245,149 @@
     return changed > 0;
   }
 
+
+  // Mobile native dashboard uses a strict allowlist of non-secret, labeled
+  // router status fields. Unlike global page regexes, candidates must be near
+  // the corresponding label and pass field-specific validation.
+  function readMobileStatus() {
+    var keys = {
+      signal: ["Signal Intensity", "Signal Strength", "RSSI"],
+      clients: ["Connected Clients", "Connected Devices"],
+      network: ["Network Status", "Connection Status"],
+      provider: ["Network Provider"],
+      type: ["Net Type", "Network Type"],
+      band: ["Band", "LTE Band"],
+      uptime: ["Connection Uptime", "Uptime"],
+      ip: ["IP Address", "WAN IP Address"],
+      gateway: ["Default Gateway"],
+      primaryDns: ["Primary DNS Server"],
+      secondaryDns: ["Secondary DNS Server"],
+      imei: ["IMEI"]
+    };
+    var answer = {};
+    var sources = docs();
+
+    function trimText(value) {
+      return String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+    }
+
+    function valid(key, candidate) {
+      var text = trimText(candidate);
+      if (!text || text.length > 75) return false;
+      if (key === "signal") return /^-?\d{1,3}\s*dBm$/i.test(text) || /^\d{1,3}\s*%$/.test(text);
+      if (key === "clients") return /^\d{1,3}$/.test(text);
+      if (key === "network") return /^(connected|disconnected|connecting|online|offline|limited|no service|registered|unregistered)$/i.test(text);
+      if (key === "type") return /^(2G|3G|4G|5G|LTE|LTE-A|NR|HSPA\+?|WCDMA|GSM|EDGE)$/i.test(text);
+      if (key === "band") return /^(?:LTE\s*)?BAND\s*\d+[A-Z]?$/i.test(text) || /^B\d{1,3}$/i.test(text);
+      if (key === "uptime") return /(?:\d+\s*(?:day|hour|min|sec)|^\d{1,2}:\d{2}(?::\d{2})?$)/i.test(text);
+      if (key === "ip" || key === "gateway" || key === "primaryDns" || key === "secondaryDns")
+        return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(text);
+      if (key === "imei") return /^\d{14,17}$/.test(text);
+      if (key === "provider")
+        return /^[A-Za-z0-9][A-Za-z0-9 ._+\-]{1,40}$/.test(text) &&
+          !/^(home|settings|features|management|connected|disconnected|internet|mobile network|ipv4|ipv6)$/i.test(text);
+      return false;
+    }
+
+    function resolve(doc, key, aliases) {
+      var items = doc.querySelectorAll("td,th,span,div,p,label,strong,b,li,small,h1,h2,h3,h4");
+      var best = "", score = -1;
+      function consider(candidate, rank) {
+        var value = trimText(candidate);
+        if (valid(key, value) && rank > score) {
+          best = value;
+          score = rank;
+        }
+      }
+
+      for (var i = 0; i < items.length; i++) {
+        var labelNode = items[i];
+        if (labelNode.closest && labelNode.closest("#dlink-mobile-status-render")) continue;
+        var label = trimText(labelNode.textContent);
+        if (!label || label.length > 55) continue;
+        var matched = "";
+        for (var a = 0; a < aliases.length; a++) {
+          if (normalize(label) === normalize(aliases[a]) ||
+              normalize(label) === normalize(aliases[a]) + ":") {
+            matched = aliases[a];
+            break;
+          }
+          if (normalize(label).indexOf(normalize(aliases[a]) + ":") === 0) {
+            matched = aliases[a];
+            consider(label.substring(matched.length + 1), 125);
+          }
+        }
+        if (!matched) continue;
+
+        var next = labelNode.nextElementSibling;
+        if (next) {
+          consider(next.textContent, 105);
+          if (next.firstElementChild) consider(next.firstElementChild.textContent, 100);
+        }
+
+        var parent = labelNode.parentElement;
+        if (!parent) continue;
+        var remainder = trimText(parent.textContent);
+        if (normalize(remainder).indexOf(normalize(matched)) === 0)
+          consider(remainder.slice(matched.length).replace(/^[:\s]+/, ""), 112);
+
+        if (parent.nextElementSibling) {
+          consider(parent.nextElementSibling.textContent, 98);
+          if (parent.nextElementSibling.firstElementChild)
+            consider(parent.nextElementSibling.firstElementChild.textContent, 94);
+        }
+
+        var cell = labelNode.closest("td,th");
+        if (cell && cell.nextElementSibling)
+          consider(cell.nextElementSibling.textContent, 102);
+        if (cell && cell.parentElement && cell.parentElement.nextElementSibling) {
+          var row = cell.parentElement;
+          var following = row.nextElementSibling;
+          var at = Array.prototype.indexOf.call(row.children, cell);
+          if (following.children[at]) consider(following.children[at].textContent, 115);
+        }
+        var container = parent.parentElement;
+        if (container && container.childElementCount <= 3 &&
+            trimText(container.textContent).length < 95 &&
+            normalize(container.textContent).indexOf(normalize(matched)) === 0)
+          consider(trimText(container.textContent).slice(matched.length).replace(/^[:\s]+/, ""), 80);
+      }
+
+      // Some firmware versions expose status values in successive text lines.
+      if (!best && doc.body) {
+        var lines = String(doc.body.innerText || "")
+          .split(/[\n\r\t]+/).map(trimText).filter(Boolean);
+        for (var l = 0; l < lines.length; l++) {
+          for (var j = 0; j < aliases.length; j++) {
+            var wanted = normalize(aliases[j]);
+            var line = normalize(lines[l]);
+            if (line.indexOf(wanted + ":") === 0)
+              consider(lines[l].substring(aliases[j].length + 1), 70);
+            if (line === wanted || line === wanted + ":") {
+              if (l + 1 < lines.length) consider(lines[l + 1], 65);
+            }
+          }
+        }
+      }
+      return best;
+    }
+
+    for (var key in keys) {
+      for (var d = 0; d < sources.length; d++) {
+        var value = resolve(sources[d], key, keys[key]);
+        if (value) {
+          answer[key] = value;
+          break;
+        }
+      }
+    }
+    return answer;
+  }
+
   window.DLinkBridge = {
     refresh: refresh,
     styleStatus: emphasizeRouterStatus,
-    status: readQuickStatus,
+    status: readMobileStatus,
     open: function(label) {
       if (sections.indexOf(label) < 0) return false;
       refresh();
