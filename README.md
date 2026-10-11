@@ -1,4 +1,18 @@
-# D-Link WiFi v2.3 — Truly Readable Mobile Dashboard
+# D-Link WiFi v2.5 — Five-bar live signal indicator
+
+The D-Link DWR-M960 uses **five** signal bars, not four. The Signal Strength card now displays **five vertical bars** alongside the router's live dBm measurement.
+
+- 1 bar: red (very weak)
+- 2 or 3 bars: yellow (weak/moderate)
+- 4 or 5 bars: green (good/strong)
+- Unavailable signal: five gray inactive bars (no invented reading)
+
+The displayed number of bars is estimated from the reported dBm value, not an exact firmware-reported bar count. The dBm thresholds are -105, -95, -85 and -75. Native status cards, backup original home view, auto-reconnect, password update, and local-only Wi-Fi connection remain as in version 2.4.
+
+## Installing
+Download the **signed personal release** version. It should install over the previous personal signed release using the same signing certificate. Do not uninstall unless a signing conflict actually occurs, so locally saved credentials are retained.
+
+## Previous functionality
 
 This Android app is for the local D-Link DWR-M960 router on `http://192.168.0.1/login.htm`.
 
