@@ -11,11 +11,16 @@
 
   function docs() {
     var result = [document];
-    var frames = document.querySelectorAll("iframe,frame");
-    for (var i = 0; i < frames.length; i++) {
+    for (var d = 0; d < result.length && result.length < 20; d++) {
       try {
-        if (frames[i].contentDocument) result.push(frames[i].contentDocument);
-      } catch (e) { /* Ignore cross-origin frames. */ }
+        var frames = result[d].querySelectorAll("iframe,frame");
+        for (var i = 0; i < frames.length && result.length < 20; i++) {
+          try {
+            var nested = frames[i].contentDocument;
+            if (nested && result.indexOf(nested) < 0) result.push(nested);
+          } catch (e) { /* Other origins cannot be read. */ }
+        }
+      } catch (e) { }
     }
     return result;
   }
@@ -367,6 +372,65 @@
               if (l + 1 < lines.length) consider(lines[l + 1], 65);
             }
           }
+        }
+      }
+
+      // D-Link desktop firmware often puts ALL four column headings in one
+      // table row and ALL values in the next. Therefore sibling text alone is
+      // not reliable: use measured positions to pair heading to its value.
+      if (!best) {
+        var leaves = doc.querySelectorAll("td,th,span,div,p,label,strong,b,small,li,a");
+        var headings = [], candidates = [];
+        for (var n = 0; n < leaves.length; n++) {
+          var item = leaves[n];
+          if (!item.getBoundingClientRect) continue;
+          var itemText = trimText(item.textContent);
+          if (!itemText || itemText.length > 75) continue;
+          var rect = item.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) continue;
+          var isHeading = aliases.some(function(label) {
+            return normalize(itemText) === normalize(label) ||
+              normalize(itemText) === normalize(label) + ":";
+          });
+          if (isHeading) {
+            headings.push({ rect: rect, text: itemText });
+          } else if (valid(key, itemText) &&
+                     (!item.children.length || item.children.length < 2)) {
+            candidates.push({ rect: rect, text: itemText,
+              complexity: item.children.length });
+          }
+        }
+        var bestDistance = 999999;
+        for (var h = 0; h < headings.length; h++) {
+          var head = headings[h].rect;
+          var hx = head.left + head.width / 2;
+          for (var v = 0; v < candidates.length; v++) {
+            var node = candidates[v];
+            var box = node.rect;
+            var vx = box.left + box.width / 2;
+            var dx = Math.abs(vx - hx);
+            var dy = box.top - head.bottom;
+            if (dy < -7 || dy > 110 || dx > Math.max(80, head.width * 1.8))
+              continue;
+            var distance = dy * 2 + dx * 1.5 +
+              (node.complexity ? 12 : 0);
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              best = node.text;
+            }
+          }
+        }
+      }
+
+      // Some versions place the label and value together on one line.
+      if (!best && doc.body) {
+        var raw = String(doc.body.innerText || "");
+        for (var a = 0; a < aliases.length; a++) {
+          var escaped = aliases[a].replace(/[^A-Za-z0-9 ]/g, "");
+          var line = new RegExp("(?:^|\\n)\\s*" + escaped +
+            "\\s*:\\s*([^\\r\\n]+)", "im");
+          var found = raw.match(line);
+          if (found && valid(key, found[1])) { best = trimText(found[1]); break; }
         }
       }
       return best;
