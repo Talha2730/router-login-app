@@ -3,6 +3,7 @@ package com.router.login;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.net.ConnectivityManager;
+import android.net.Uri;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
@@ -34,6 +35,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import org.json.JSONObject;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
@@ -61,6 +63,9 @@ public class MainActivity extends Activity {
     private boolean homeNavigationPending = false;
     private String bridgeSource;
     private String mobileLoginSource;
+    // Optional per-device login defaults are added to the private, signed APK,
+    // never uploaded with the public GitHub source or its unsigned build.
+    private String localLoginFillSource = "";
     private static final long ROUTER_CHECK_INTERVAL_MS = 12000L;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback wifiCallback;
@@ -110,10 +115,62 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             mobileLoginSource = "";
         }
+        // Optional private personalization: absent in the public source build.
+        // This is only used to fill visible form fields, never auto-submitted.
+        // Because APK assets are extractable, avoid using a sensitive password.
+        try (InputStream input = getAssets().open("private_login_defaults.json")) {
+            ByteArrayOutputStream b = new ByteArrayOutputStream();
+            byte[] bytes = new byte[512];
+            int n;
+            while ((n = input.read(bytes)) != -1) b.write(bytes, 0, n);
+            JSONObject defaults = new JSONObject(
+                new String(b.toByteArray(), StandardCharsets.UTF_8));
+            String username = defaults.optString("username", "");
+            String password = defaults.optString("password", "");
+            if (!username.isEmpty() && !password.isEmpty()) {
+                localLoginFillSource = buildLocalLoginFillScript(username, password);
+            }
+        } catch (Exception ignored) {
+            // No password is ever required or committed to the public repo.
+        }
         buildLayout();
         configureWebView();
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl(START_URL);
+    }
+
+    private boolean isLocalRouterLoginUrl(String url) {
+        if (url == null) return false;
+        try {
+            Uri parsed = Uri.parse(url);
+            String path = parsed.getPath();
+            return "http".equalsIgnoreCase(parsed.getScheme())
+                && "192.168.0.1".equals(parsed.getHost())
+                && path != null
+                && path.toLowerCase(Locale.US).startsWith("/login");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private String buildLocalLoginFillScript(String username, String password) {
+        // JSONObject.quote escapes JS strings. Only the known local router
+        // login page receives this script; no automatic Login click occurs.
+        return "(function(){try{"
+            + "var p=document.querySelector('input[type=password]');if(!p)return false;"
+            + "var forms=p.form||document;"
+            + "var fields=forms.querySelectorAll('input[type=text],input[type=email],input:not([type])');"
+            + "var user=null;for(var i=0;i<fields.length;i++){"
+            + "var f=fields[i];var key=((f.name||'')+' '+(f.id||'')+' '+(f.placeholder||'')).toLowerCase();"
+            + "if(/user|login|account|name/.test(key)){user=f;break;}"
+            + "if(!user&&f!==p)user=f;}"
+            + "function change(f,value){if(!f||f.value)return;"
+            + "f.value=value;"
+            + "f.dispatchEvent(new Event('input',{bubbles:true}));"
+            + "f.dispatchEvent(new Event('change',{bubbles:true}));}"
+            + "change(user," + JSONObject.quote(username) + ");"
+            + "change(p," + JSONObject.quote(password) + ");"
+            + "return true;}catch(e){return false;}})();";
     }
 
     private int dp(float value) {
@@ -429,10 +486,13 @@ public class MainActivity extends Activity {
     private void onRouterPageFinished(WebView view, String url) {
         if (view != web) return;
         fitPageToScreen();
-        // Readability enhancement is scoped strictly to the router login page.
-        if (url != null && url.toLowerCase(Locale.US).contains("/login")
-                && mobileLoginSource != null && !mobileLoginSource.isEmpty()) {
-            view.evaluateJavascript(mobileLoginSource, null);
+        // Visual login adjustments and optional local personal autofill
+        // are strictly scoped to the D-Link's own 192.168.0.1 login URL.
+        if (isLocalRouterLoginUrl(url) && isLocalRouterLoginUrl(view.getUrl())) {
+            if (mobileLoginSource != null && !mobileLoginSource.isEmpty())
+                view.evaluateJavascript(mobileLoginSource, null);
+            if (!localLoginFillSource.isEmpty())
+                view.evaluateJavascript(localLoginFillSource, null);
         }
         if (bridgeSource.isEmpty()) return;
         view.evaluateJavascript(bridgeSource, result -> {
