@@ -193,8 +193,57 @@
     return output;
   }
 
+
+  // Increase the contrast of the actual router's status tiles without copying
+  // their values or altering settings, authentication, or page navigation.
+  function emphasizeRouterStatus() {
+    var labels = [
+      "signal intensity","signal strength","network provider","network status",
+      "connection uptime","ip address","default gateway","primary dns server",
+      "secondary dns server","imei","net type","band"
+    ];
+    var changed = 0;
+    var pages = docs();
+    for (var d = 0; d < pages.length; d++) {
+      var doc = pages[d];
+      var text = (doc.body && doc.body.textContent) || "";
+      if (!/signal intensity|signal strength/i.test(text) ||
+          !/network provider|network status/i.test(text)) continue;
+      var elements = doc.querySelectorAll("td,th,span,small,label,p,div,strong,b");
+      for (var i = 0; i < elements.length; i++) {
+        var el = elements[i];
+        if (el.children.length > 0 && (el.textContent || "").length > 38) continue;
+        var value = normalize(el.textContent);
+        var isClients = value.indexOf("connected clients:") === 0;
+        var isLabel = labels.indexOf(value) !== -1;
+        var isHeading = value === "internet" || value === "mobile network";
+        if (!isLabel && !isHeading && !isClients) continue;
+
+        var cell = el.closest("td,th");
+        var table = cell ? cell.closest("table") : null;
+        if (table && table.querySelectorAll("tr").length <= 3) {
+          var tiles = table.querySelectorAll("td,th");
+          for (var t = 0; t < tiles.length; t++) {
+            tiles[t].style.setProperty("font-weight", "650", "important");
+            tiles[t].style.setProperty("font-size", "16px", "important");
+            tiles[t].style.setProperty("color", "#183a4d", "important");
+            tiles[t].style.setProperty("line-height", "1.25", "important");
+          }
+        }
+        el.style.setProperty("font-weight", "700", "important");
+        el.style.setProperty("font-size",
+          isHeading ? "23px" : isClients ? "18px" :
+          value.length > 16 ? "14px" : "17px", "important");
+        el.style.setProperty("color", "#14384b", "important");
+        changed++;
+      }
+    }
+    return changed > 0;
+  }
+
   window.DLinkBridge = {
     refresh: refresh,
+    styleStatus: emphasizeRouterStatus,
     status: readQuickStatus,
     open: function(label) {
       if (sections.indexOf(label) < 0) return false;
@@ -215,5 +264,7 @@
       }
     }
   };
-  return refresh();
+  var ready = refresh();
+  emphasizeRouterStatus();
+  return ready;
 })();
