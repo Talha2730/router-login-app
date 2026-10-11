@@ -12,6 +12,7 @@ import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final String ROUTER_URL = "http://192.168.0.1/login.htm";
+    // Keep older D-Link firmware's fixed-width UI intact; scale the entire page.
     private static final int MIN_DESKTOP_WIDTH = 980;
     private static final int MAX_DESKTOP_WIDTH = 1800;
     private WebView web;
@@ -27,31 +28,34 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(true);
-        settings.setSupportZoom(true);
-        settings.setBuiltInZoomControls(true);
-        settings.setDisplayZoomControls(false);
-        settings.setDefaultTextEncodingName("UTF-8");
-        web.setInitialScale(0);
 
+        // Fixed screen: turn off pinch-to-zoom and all zoom controls.
+        settings.setSupportZoom(false);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
+        settings.setTextZoom(100);
+        settings.setDefaultTextEncodingName("UTF-8");
+
+        // Let WebView start in overview mode. Subsequent page loads re-fit.
+        web.setInitialScale(0);
         web.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                // D-Link's old router UI uses a fixed-width desktop layout.
-                // Fit that whole layout to the phone instead of using
-                // width=device-width (which clips the right-hand side).
-                // Repeat once for pages that add their controls dynamically.
-                fitEntireRouterPage(view);
+                fitPageToScreen(view);
                 view.postDelayed(() -> {
-                    if (view == web) fitEntireRouterPage(view);
-                }, 350);
+                    if (view == web) fitPageToScreen(view);
+                }, 400);
+                view.postDelayed(() -> {
+                    if (view == web) fitPageToScreen(view);
+                }, 1000);
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
                     Toast.makeText(MainActivity.this,
-                        "Router not reachable. Connect to the router Wi-Fi.",
+                        "Router unavailable. Connect to D-Link WiFi and retry.",
                         Toast.LENGTH_LONG).show();
                 }
             }
@@ -64,29 +68,32 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void fitEntireRouterPage(WebView view) {
+    private void fitPageToScreen(WebView view) {
         if (view.getWidth() <= 0) return;
+
+        // Translate the Android viewport to CSS pixels used by the legacy router.
         float density = getResources().getDisplayMetrics().density;
         float phoneCssWidth = view.getWidth() / Math.max(0.1f, density);
 
-        // Never alter login inputs, authentication forms, or router settings.
-        // This only adjusts the viewport scale; HTML remains unchanged.
+        // No CSS reflow or login form changes: only set a fixed desktop viewport
+        // and the scale necessary to fit it within the phone display.
         String script = String.format(Locale.US,
             "(function(){try{" +
-            "var doc=document.documentElement,body=document.body;" +
-            "if(!doc)return;" +
+            "var doc=document.documentElement,body=document.body;if(!doc)return;" +
             "var measured=Math.max(%d,doc.scrollWidth||0,doc.offsetWidth||0," +
             "body?(body.scrollWidth||0):0,body?(body.offsetWidth||0):0);" +
-            "var fullWidth=Math.max(%d,Math.min(%d,measured));" +
-            "var scale=Math.min(1,%.2f/fullWidth);" +
+            "var width=Math.max(%d,Math.min(%d,measured));" +
+            "var scale=Math.min(1,%.2f/width);" +
             "var head=document.head||document.getElementsByTagName('head')[0];" +
             "if(!head)return;" +
-            "var viewport=head.querySelector('meta[name=viewport]');" +
-            "if(!viewport){viewport=document.createElement('meta');" +
-            "viewport.name='viewport';head.appendChild(viewport);}" +
-            "var wanted='width='+Math.round(fullWidth)+',initial-scale='+scale.toFixed(4)" +
-            "+',minimum-scale=0.1,maximum-scale=5,user-scalable=yes';" +
-            "if(viewport.content!==wanted)viewport.content=wanted;" +
+            "var meta=head.querySelector('meta[name=viewport]');" +
+            "if(!meta){meta=document.createElement('meta');" +
+            "meta.name='viewport';head.appendChild(meta);}" +
+            "var fixed='width='+Math.round(width)+',initial-scale='+scale.toFixed(4)" +
+            "+',minimum-scale='+scale.toFixed(4)" +
+            "+',maximum-scale='+scale.toFixed(4)" +
+            "+',user-scalable=no';" +
+            "if(meta.content!==fixed)meta.content=fixed;" +
             "}catch(e){}})();",
             MIN_DESKTOP_WIDTH, MIN_DESKTOP_WIDTH, MAX_DESKTOP_WIDTH, phoneCssWidth);
         view.evaluateJavascript(script, null);
