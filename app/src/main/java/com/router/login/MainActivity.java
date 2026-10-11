@@ -143,16 +143,8 @@ public class MainActivity extends Activity {
         dashboard.setFillViewport(true);
         LinearLayout home = vertical();
         dashboardContent = home;
-        home.setPadding(dp(16), dp(21), dp(16), dp(18));
+        home.setPadding(dp(12), dp(7), dp(12), dp(9));
         dashboard.addView(home);
-
-        TextView dashboardTitle = text("Router Dashboard", 27, INK, true);
-        home.addView(dashboardTitle);
-        TextView dashboardHint = text("Your live router home and controls", 14, Color.rgb(69, 90, 104), true);
-        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, -2);
-        hintParams.topMargin = dp(5);
-        hintParams.bottomMargin = dp(14);
-        home.addView(dashboardHint, hintParams);
 
         // Show the real authenticated D-Link Home page here instead of
         // attempting to copy status values from the router's proprietary HTML.
@@ -160,53 +152,53 @@ public class MainActivity extends Activity {
         // router itself, so their values remain accurate.
         LinearLayout liveHeading = new LinearLayout(this);
         liveHeading.setGravity(Gravity.CENTER_VERTICAL);
-        liveHeading.addView(text("Live Router Status", 20, INK, true),
-            new LinearLayout.LayoutParams(0, -2, 1f));
         Button refreshLive = new Button(this);
         refreshLive.setText("Refresh");
         refreshLive.setAllCaps(false);
         refreshLive.setTextColor(TEAL);
         refreshLive.setTextSize(12);
+        refreshLive.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         refreshLive.setBackground(shape(Color.WHITE, 10, BORDER));
-        liveHeading.addView(refreshLive,
-            new LinearLayout.LayoutParams(dp(91), dp(41)));
+        LinearLayout.LayoutParams refreshParams =
+            new LinearLayout.LayoutParams(dp(86), dp(34));
+        liveHeading.addView(refreshLive, refreshParams);
         LinearLayout.LayoutParams liveHeadingParams =
-            new LinearLayout.LayoutParams(-1, dp(49));
+            new LinearLayout.LayoutParams(-1, dp(38));
         home.addView(liveHeading, liveHeadingParams);
         refreshLive.setOnClickListener(v -> refreshRouterHome());
 
         webHolder = new FrameLayout(this);
         webHolder.setBackground(shape(Color.WHITE, 13, BORDER));
         LinearLayout.LayoutParams liveWebParams =
-            new LinearLayout.LayoutParams(-1, dp(315));
-        liveWebParams.bottomMargin = dp(16);
+            new LinearLayout.LayoutParams(-1, dp(dashboardWebHeight()));
+        liveWebParams.bottomMargin = dp(7);
         home.addView(webHolder, liveWebParams);
         web = new WebView(this);
         web.setBackgroundColor(Color.WHITE);
         webHolder.addView(web, new FrameLayout.LayoutParams(-1, -1));
 
-        TextView sectionsHeading = text("Router Controls", 19, INK, true);
+        TextView sectionsHeading = text("Router Controls", 17, INK, true);
         LinearLayout.LayoutParams sectionsParams =
             new LinearLayout.LayoutParams(-1, -2);
-        sectionsParams.bottomMargin = dp(13);
+        sectionsParams.bottomMargin = dp(7);
         home.addView(sectionsHeading, sectionsParams);
 
         LinearLayout first = new LinearLayout(this);
         LinearLayout second = new LinearLayout(this);
         home.addView(first);
         LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(-1, -2);
-        secondParams.topMargin = dp(12);
+        secondParams.topMargin = dp(8);
         home.addView(second, secondParams);
 
         first.addView(sectionCard("Settings", "Wi-Fi & network", android.R.drawable.ic_menu_manage), cardParams(false));
         first.addView(sectionCard("Features", "Router options", android.R.drawable.ic_menu_agenda), cardParams(true));
         second.addView(sectionCard("Management", "Administration", android.R.drawable.ic_menu_preferences),
-            new LinearLayout.LayoutParams(-1, dp(122)));
+            new LinearLayout.LayoutParams(-1, dp(97)));
 
         TextView address = text("Router address  •  192.168.0.1", 12, Color.rgb(117, 133, 142), false);
         address.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams addressParams = new LinearLayout.LayoutParams(-1, dp(44));
-        addressParams.topMargin = dp(17);
+        LinearLayout.LayoutParams addressParams = new LinearLayout.LayoutParams(-1, dp(24));
+        addressParams.topMargin = dp(3);
         home.addView(address, addressParams);
 
         Button logout = new Button(this);
@@ -214,8 +206,8 @@ public class MainActivity extends Activity {
         logout.setTextColor(TEAL);
         logout.setAllCaps(false);
         logout.setBackground(shape(Color.WHITE, 12, BORDER));
-        LinearLayout.LayoutParams logoutParams = new LinearLayout.LayoutParams(-1, dp(52));
-        logoutParams.topMargin = dp(7);
+        LinearLayout.LayoutParams logoutParams = new LinearLayout.LayoutParams(-1, dp(43));
+        logoutParams.topMargin = dp(4);
         home.addView(logout, logoutParams);
         logout.setOnClickListener(v -> logOut());
 
@@ -243,6 +235,12 @@ public class MainActivity extends Activity {
     }
 
 
+    private int dashboardWebHeight() {
+        float density = Math.max(0.1f, getResources().getDisplayMetrics().density);
+        float heightDp = getResources().getDisplayMetrics().heightPixels / density;
+        return Math.max(224, Math.min(260, Math.round(heightDp * 0.31f)));
+    }
+
     private void attachWebToMainScreen() {
         if (webHolder.getParent() == root) return;
         if (webHolder.getParent() instanceof ViewGroup)
@@ -259,9 +257,9 @@ public class MainActivity extends Activity {
         if (webHolder.getParent() instanceof ViewGroup)
             ((ViewGroup) webHolder.getParent()).removeView(webHolder);
         LinearLayout.LayoutParams params =
-            new LinearLayout.LayoutParams(-1, dp(315));
-        params.bottomMargin = dp(16);
-        dashboardContent.addView(webHolder, 3, params);
+            new LinearLayout.LayoutParams(-1, dp(dashboardWebHeight()));
+        params.bottomMargin = dp(7);
+        dashboardContent.addView(webHolder, 1, params);
         webHolder.setVisibility(View.VISIBLE);
         web.postDelayed(this::fitPageToScreen, 150);
     }
@@ -283,14 +281,14 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams cardParams(boolean right) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(142), 1f);
-        if (right) lp.leftMargin = dp(12);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(108), 1f);
+        if (right) lp.leftMargin = dp(9);
         return lp;
     }
 
     private View sectionCard(String title, String description, int iconRes) {
         LinearLayout card = vertical();
-        card.setPadding(dp(15), dp(17), dp(8), dp(10));
+        card.setPadding(dp(13), dp(10), dp(8), dp(6));
         card.setBackground(shape(Color.WHITE, 15, BORDER));
         card.setElevation(dp(2));
         card.setClickable(true);
@@ -299,11 +297,11 @@ public class MainActivity extends Activity {
         icon.setImageResource(iconRes);
         icon.setColorFilter(TEAL);
         icon.setScaleType(ImageView.ScaleType.FIT_START);
-        card.addView(icon, new LinearLayout.LayoutParams(dp(30), dp(30)));
+        card.addView(icon, new LinearLayout.LayoutParams(dp(26), dp(26)));
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
-        titleParams.topMargin = dp(8);
-        card.addView(text(title, 19, INK, true), titleParams);
-        card.addView(text(description, 12, Color.rgb(83, 102, 114), true));
+        titleParams.topMargin = dp(5);
+        card.addView(text(title, 18, INK, true), titleParams);
+        card.addView(text(description, 11, Color.rgb(83, 102, 114), true));
         card.setContentDescription("Open " + title);
         card.setOnClickListener(v -> openSection(title));
         return card;
