@@ -24,6 +24,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import org.json.JSONObject;
+import org.json.JSONTokener;
 
 public class MainActivity extends Activity {
     private static final String START_URL = "http://192.168.0.1/login.htm";
@@ -41,6 +44,8 @@ public class MainActivity extends Activity {
     private boolean showingSection = false;
     private boolean initialDashboardShown = false;
     private String bridgeSource;
+    private final LinkedHashMap<String, TextView> quickValues = new LinkedHashMap<>();
+    private TextView quickStatusMessage;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -134,8 +139,10 @@ public class MainActivity extends Activity {
         TextView dashboardHint = text("Tap a section to open its controls", 13, Color.rgb(95, 114, 124), false);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, -2);
         hintParams.topMargin = dp(5);
-        hintParams.bottomMargin = dp(22);
+        hintParams.bottomMargin = dp(14);
         home.addView(dashboardHint, hintParams);
+
+        home.addView(createQuickStatusPanel());
 
         LinearLayout first = new LinearLayout(this);
         LinearLayout second = new LinearLayout(this);
@@ -196,6 +203,138 @@ public class MainActivity extends Activity {
         webHolder.addView(web, new FrameLayout.LayoutParams(-1, -1));
 
         showLogin();
+    }
+
+
+    // Native status tiles live on the Home dashboard, above the section buttons.
+    private View createQuickStatusPanel() {
+        LinearLayout panel = vertical();
+        panel.setBackground(shape(Color.WHITE, 16, BORDER));
+        panel.setPadding(dp(14), dp(14), dp(14), dp(14));
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(text("Quick Router Status", 18, INK, true),
+            new LinearLayout.LayoutParams(0, -2, 1f));
+        Button refresh = new Button(this);
+        refresh.setText("Refresh");
+        refresh.setAllCaps(false);
+        refresh.setTextSize(12);
+        refresh.setTextColor(TEAL);
+        refresh.setBackground(shape(PALE, 10, BORDER));
+        header.addView(refresh, new LinearLayout.LayoutParams(dp(88), dp(40)));
+        refresh.setOnClickListener(v -> refreshQuickStatus(true));
+        panel.addView(header);
+
+        quickStatusMessage = text("Reading router status...", 12,
+            Color.rgb(104, 125, 135), false);
+        LinearLayout.LayoutParams messageParams =
+            new LinearLayout.LayoutParams(-1, -2);
+        messageParams.topMargin = dp(5);
+        messageParams.bottomMargin = dp(11);
+        panel.addView(quickStatusMessage, messageParams);
+
+        addQuickRow(panel, "signal", "Signal", "network", "Network");
+        addQuickRow(panel, "provider", "Provider", "clients", "Connected Devices");
+        addQuickRow(panel, "type", "Network Type", "band", "LTE Band");
+        addQuickRow(panel, "uptime", "Connection Uptime", "ip", "IP Address");
+
+        LinearLayout.LayoutParams panelParams =
+            new LinearLayout.LayoutParams(-1, -2);
+        panelParams.bottomMargin = dp(18);
+        panel.setLayoutParams(panelParams);
+        return panel;
+    }
+
+    private void addQuickRow(LinearLayout panel, String leftKey, String leftLabel,
+                             String rightKey, String rightLabel) {
+        LinearLayout row = new LinearLayout(this);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2);
+        rowParams.bottomMargin = dp(9);
+        panel.addView(row, rowParams);
+        row.addView(quickTile(leftKey, leftLabel), quickTileParams(false));
+        row.addView(quickTile(rightKey, rightLabel), quickTileParams(true));
+    }
+
+    private LinearLayout.LayoutParams quickTileParams(boolean right) {
+        LinearLayout.LayoutParams result =
+            new LinearLayout.LayoutParams(0, dp(69), 1f);
+        if (right) result.leftMargin = dp(9);
+        return result;
+    }
+
+    private View quickTile(String key, String label) {
+        LinearLayout tile = vertical();
+        tile.setPadding(dp(12), dp(9), dp(7), dp(7));
+        tile.setBackground(shape(PALE, 10, BORDER));
+        tile.addView(text(label, 11, Color.rgb(93, 111, 121), false));
+        TextView value = text("—", 15, INK, true);
+        value.setSingleLine(true);
+        value.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams valueParams =
+            new LinearLayout.LayoutParams(-1, -2);
+        valueParams.topMargin = dp(3);
+        tile.addView(value, valueParams);
+        quickValues.put(key, value);
+        return tile;
+    }
+
+    private void clearQuickStatus() {
+        for (TextView value : quickValues.values()) value.setText("—");
+        if (quickStatusMessage != null)
+            quickStatusMessage.setText("Sign in to the router to view status.");
+    }
+
+    private void refreshQuickStatus(boolean navigateHome) {
+        if (!authenticated) {
+            clearQuickStatus();
+            return;
+        }
+        if (quickStatusMessage != null) quickStatusMessage.setText("Refreshing...");
+        if (!navigateHome) {
+            captureQuickStatus();
+            return;
+        }
+        for (TextView value : quickValues.values()) value.setText("—");
+        // User-triggered refresh only; avoid navigating away from unsaved settings.
+        web.evaluateJavascript(
+            "window.DLinkBridge && window.DLinkBridge.open('Home')", ignored -> {
+                web.postDelayed(this::captureQuickStatus, 600);
+                web.postDelayed(this::captureQuickStatus, 1500);
+            });
+    }
+
+    private void captureQuickStatus() {
+        if (!authenticated || web == null || quickValues.isEmpty()) return;
+        web.evaluateJavascript(
+            "(window.DLinkBridge && window.DLinkBridge.status) ? window.DLinkBridge.status() : null",
+            result -> {
+                if (!authenticated) return;
+                try {
+                    if (result == null || "null".equals(result) ||
+                        "undefined".equals(result)) return;
+                    Object decoded = new JSONTokener(result).nextValue();
+                    if (decoded instanceof String)
+                        decoded = new JSONTokener((String) decoded).nextValue();
+                    if (!(decoded instanceof JSONObject)) return;
+                    JSONObject values = (JSONObject) decoded;
+                    int populated = 0;
+                    for (String key : quickValues.keySet()) {
+                        String value = values.optString(key, "").trim();
+                        if (!value.isEmpty() && value.length() <= 90) {
+                            quickValues.get(key).setText(value);
+                            populated++;
+                        }
+                    }
+                    if (quickStatusMessage != null) {
+                        quickStatusMessage.setText(populated > 0
+                            ? "Values read from your connected router"
+                            : "Status not found. Open Home or tap Refresh.");
+                    }
+                } catch (Exception error) {
+                    if (quickStatusMessage != null)
+                        quickStatusMessage.setText("Status unavailable. Tap Refresh.");
+                }
+            });
     }
 
     private LinearLayout.LayoutParams cardParams(boolean right) {
@@ -268,6 +407,7 @@ public class MainActivity extends Activity {
                     initialDashboardShown = true;
                     showDashboard();
                 }
+                captureQuickStatus();
             } else if (url != null && url.toLowerCase(Locale.US).contains("login")) {
                 if (authenticated || !initialDashboardShown) showLogin();
             }
@@ -299,6 +439,7 @@ public class MainActivity extends Activity {
 
     private void showLogin() {
         authenticated = false;
+        clearQuickStatus();
         initialDashboardShown = false;
         showingSection = false;
         dashboard.setVisibility(View.GONE);
@@ -308,6 +449,8 @@ public class MainActivity extends Activity {
 
     private void showDashboard() {
         showingSection = false;
+        if (authenticated && web != null)
+            web.postDelayed(this::captureQuickStatus, 250);
         dashboard.setVisibility(View.VISIBLE);
         contentToolbar.setVisibility(View.GONE);
         webHolder.setVisibility(View.GONE);
