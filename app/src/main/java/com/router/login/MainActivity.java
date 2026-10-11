@@ -518,7 +518,8 @@ public class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(0, -2, 1f));
             liveSignalBars = new LinearLayout(this);
             liveSignalBars.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-            for (int i = 0; i < 4; i++) {
+            // The original D-Link DWR-M960 has FIVE signal bars.
+            for (int i = 0; i < 5; i++) {
                 View bar = new View(this);
                 bar.setBackground(shape(Color.rgb(202, 211, 219), 2,
                     Color.TRANSPARENT));
@@ -527,8 +528,9 @@ public class MainActivity extends Activity {
                 if (i > 0) barParams.leftMargin = dp(3);
                 liveSignalBars.addView(bar, barParams);
             }
+            liveSignalBars.setContentDescription("Signal unavailable");
             signalRow.addView(liveSignalBars,
-                new LinearLayout.LayoutParams(-2, dp(24)));
+                new LinearLayout.LayoutParams(-2, dp(28)));
             card.addView(signalRow, labelParams);
         } else {
             card.addView(value, labelParams);
@@ -541,21 +543,37 @@ public class MainActivity extends Activity {
         if (liveSignalBars == null) return;
         int count = 0;
         try {
-            Matcher match = Pattern.compile("(-?\\d{1,3})\\s*dBm",
+            // Display an estimate of one to five signal bars from real
+            // router signal strength, never a hardcoded live reading.
+            Matcher dbmMatch = Pattern.compile("(-?\\\\d{1,3})\\\\s*dBm",
                 Pattern.CASE_INSENSITIVE).matcher(rawValue);
-            if (match.find()) {
-                int dbm = Integer.parseInt(match.group(1));
-                count = (dbm <= -95) ? 1 : (dbm <= -76 ? 3 : 4);
+            if (dbmMatch.find()) {
+                int dbm = Integer.parseInt(dbmMatch.group(1));
+                if (dbm <= -105) count = 1;
+                else if (dbm <= -95) count = 2;
+                else if (dbm <= -85) count = 3;
+                else if (dbm <= -75) count = 4;
+                else count = 5;
+            } else {
+                Matcher percentage = Pattern.compile("(\\\\d{1,3})\\\\s*%")
+                    .matcher(rawValue);
+                if (percentage.find()) {
+                    int percent = Integer.parseInt(percentage.group(1));
+                    if (percent >= 0 && percent <= 100)
+                        count = Math.max(1, Math.min(5, (percent + 19) / 20));
+                }
             }
         } catch (Exception ignored) { }
         int activeColor = count == 1 ? Color.rgb(215, 60, 64)
-            : (count == 3 ? Color.rgb(218, 168, 31)
-            : Color.rgb(34, 167, 82));
+            : count <= 3 ? Color.rgb(218, 168, 31)
+            : Color.rgb(34, 167, 82);
         for (int i = 0; i < liveSignalBars.getChildCount(); i++) {
             View bar = liveSignalBars.getChildAt(i);
             int color = i < count ? activeColor : Color.rgb(202, 211, 219);
             bar.setBackground(shape(color, 2, Color.TRANSPARENT));
         }
+        liveSignalBars.setContentDescription(
+            count == 0 ? "Signal unavailable" : count + " of 5 signal bars");
     }
 
     /**
