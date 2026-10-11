@@ -2,6 +2,12 @@ package com.router.login;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.os.Handler;
+import android.os.Looper;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -25,6 +31,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final String START_URL = "http://192.168.0.1/login.htm";
@@ -48,6 +58,25 @@ public class MainActivity extends Activity {
     private boolean homeNavigationPending = false;
     private String bridgeSource;
     private String mobileLoginSource;
+    private static final long ROUTER_CHECK_INTERVAL_MS = 12000L;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback wifiCallback;
+    private Network activeWifi;
+    private TextView routerConnectionNotice;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService routerProbeExecutor = Executors.newSingleThreadExecutor();
+    private boolean networkMonitoring = false;
+    private boolean routerAvailable = false;
+    private boolean reconnectRequired = false;
+    private boolean probeInFlight = false;
+    private int failedProbes = 0;
+    private final Runnable routerMonitor = new Runnable() {
+        @Override public void run() {
+            if (!networkMonitoring) return;
+            probeRouterConnection();
+            mainHandler.postDelayed(this, ROUTER_CHECK_INTERVAL_MS);
+        }
+    };
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -142,6 +171,16 @@ public class MainActivity extends Activity {
         exit.setBackground(shape(Color.rgb(4, 107, 131), 10, Color.rgb(110, 202, 216)));
         top.addView(exit, new LinearLayout.LayoutParams(dp(70), dp(40)));
         exit.setOnClickListener(v -> confirmExit());
+
+        // Small non-blocking reconnect banner. Live content stays visible
+        // even when Wi-Fi is temporarily unavailable.
+        routerConnectionNotice = text("", 12, Color.WHITE, true);
+        routerConnectionNotice.setGravity(Gravity.CENTER_VERTICAL);
+        routerConnectionNotice.setPadding(dp(15), 0, dp(12), 0);
+        routerConnectionNotice.setBackgroundColor(Color.rgb(180, 106, 20));
+        routerConnectionNotice.setVisibility(View.GONE);
+        root.addView(routerConnectionNotice,
+            new LinearLayout.LayoutParams(-1, dp(37)));
 
         dashboard = new ScrollView(this);
         dashboard.setFillViewport(true);
@@ -356,8 +395,14 @@ public class MainActivity extends Activity {
 
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
-                    Toast.makeText(MainActivity.this, "Router unavailable. Connect to D-Link WiFi.",
-                        Toast.LENGTH_LONG).show();
+                    homeNavigationPending = false;
+                    // Preserve the prior authenticated session in memory.
+                    // It might still work when the router reconnects.
+                    routerAvailable = false;
+                    reconnectRequired = true;
+                    failedProbes = 0;
+                    updateConnectionNotice("Router not reachable — waiting to reconnect...");
+                    mainHandler.postDelayed(() -> probeRouterConnection(), 1200);
                 }
             }
         });
@@ -507,12 +552,218 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    // This callback watches Wi-Fi even when the router provides no Internet.
+    // A mobile-data default connection does not mean the local router is reachable.
+    @Override protected void onStart() {
+        super.onStart();
+        startNetworkMonitoring();
+    }
+
+    @Override protected void onStop() {
+        stopNetworkMonitoring();
+        // On returning to the app, recheck the session and reload the Home
+        // page if the router has since reconnected.
+        reconnectRequired = true;
+        super.onStop();
+    }
+
+    private void updateConnectionNotice(String message) {
+        if (routerConnectionNotice == null) return;
+        if (message == null || message.isEmpty()) {
+            routerConnectionNotice.setVisibility(View.GONE);
+        } else {
+            routerConnectionNotice.setText(message);
+            routerConnectionNotice.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void refreshCurrentWifi() {
+        if (connectivityManager == null) return;
+        Network candidate = null;
+        try {
+            for (Network network : connectivityManager.getAllNetworks()) {
+                NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(network);
+                if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    candidate = network;
+                    break;
+                }
+            }
+        } catch (SecurityException ignored) {
+            updateConnectionNotice("Network permission required to monitor Wi-Fi.");
+        }
+        activeWifi = candidate;
+        try {
+            // Force local 192.168.0.1 traffic over Wi-Fi, even if Android
+            // prefers cellular data because the router has no Internet.
+            connectivityManager.bindProcessToNetwork(candidate);
+        } catch (SecurityException ignored) {
+            // Normal routing may still reach the router.
+        }
+    }
+
+    private void startNetworkMonitoring() {
+        if (networkMonitoring) return;
+        networkMonitoring = true;
+        connectivityManager =
+            (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (connectivityManager == null) {
+            updateConnectionNotice("Network monitoring unavailable.");
+            return;
+        }
+        wifiCallback = new ConnectivityManager.NetworkCallback() {
+            @Override public void onAvailable(Network network) {
+                mainHandler.post(() -> {
+                    if (!networkMonitoring) return;
+                    refreshCurrentWifi();
+                    mainHandler.postDelayed(() -> probeRouterConnection(), 400);
+                });
+            }
+
+            @Override public void onLost(Network network) {
+                mainHandler.post(() -> {
+                    if (!networkMonitoring) return;
+                    refreshCurrentWifi();
+                    if (activeWifi == null) {
+                        routerDisconnected("Router Wi-Fi disconnected — reconnecting...");
+                    } else {
+                        reconnectRequired = true;
+                    }
+                    probeRouterConnection();
+                });
+            }
+
+            @Override public void onCapabilitiesChanged(
+                    Network network, NetworkCapabilities capabilities) {
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    mainHandler.post(() -> {
+                        if (!networkMonitoring) return;
+                        refreshCurrentWifi();
+                        probeRouterConnection();
+                    });
+                }
+            }
+        };
+        try {
+            NetworkRequest request = new NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                // Router Wi-Fi may have no Internet access; watch it anyway.
+                .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build();
+            connectivityManager.registerNetworkCallback(request, wifiCallback);
+        } catch (Exception ignored) {
+            wifiCallback = null;
+        }
+        refreshCurrentWifi();
+        if (activeWifi == null)
+            routerDisconnected("Connect to D-Link Wi-Fi — automatic retry is on");
+        mainHandler.removeCallbacks(routerMonitor);
+        mainHandler.post(routerMonitor);
+    }
+
+    private void stopNetworkMonitoring() {
+        networkMonitoring = false;
+        mainHandler.removeCallbacks(routerMonitor);
+        if (connectivityManager != null) {
+            if (wifiCallback != null) {
+                try {
+                    connectivityManager.unregisterNetworkCallback(wifiCallback);
+                } catch (Exception ignored) { }
+                wifiCallback = null;
+            }
+            try {
+                connectivityManager.bindProcessToNetwork(null);
+            } catch (SecurityException ignored) { }
+        }
+        activeWifi = null;
+    }
+
+    private void routerDisconnected(String message) {
+        routerAvailable = false;
+        reconnectRequired = true;
+        updateConnectionNotice(message);
+    }
+
+    private void probeRouterConnection() {
+        if (!networkMonitoring || probeInFlight) return;
+        if (activeWifi == null) {
+            refreshCurrentWifi();
+            if (activeWifi == null) {
+                routerDisconnected("Connect to D-Link Wi-Fi — automatic retry is on");
+                return;
+            }
+        }
+        final Network network = activeWifi;
+        probeInFlight = true;
+        routerProbeExecutor.execute(() -> {
+            boolean reachable = false;
+            HttpURLConnection connection = null;
+            try {
+                // A successful HTTP response proves that the local router
+                // is reachable; Internet access is not required.
+                connection = (HttpURLConnection) network.openConnection(
+                    new URL(START_URL));
+                connection.setConnectTimeout(2500);
+                connection.setReadTimeout(2500);
+                connection.setUseCaches(false);
+                connection.setInstanceFollowRedirects(false);
+                int status = connection.getResponseCode();
+                reachable = (status >= 200 && status < 400)
+                    || status == 401 || status == 403;
+            } catch (Exception ignored) {
+                reachable = false;
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+
+            final boolean connected = reachable;
+            mainHandler.post(() -> {
+                probeInFlight = false;
+                if (!networkMonitoring || activeWifi == null
+                        || !activeWifi.equals(network)) return;
+                if (connected) {
+                    failedProbes = 0;
+                    boolean shouldReconnect = reconnectRequired;
+                    routerAvailable = true;
+                    reconnectRequired = false;
+                    updateConnectionNotice(null);
+                    if (shouldReconnect) reloadAfterReconnection();
+                } else {
+                    failedProbes++;
+                    // Avoid flashing the offline indicator on one transient
+                    // slow response while the router is actually available.
+                    if (failedProbes >= 2 || !routerAvailable) {
+                        routerDisconnected("Router unreachable — retrying automatically...");
+                    }
+                }
+            });
+        });
+    }
+
+    private void reloadAfterReconnection() {
+        if (!networkMonitoring || web == null) return;
+        // An existing session should reopen the real Home dashboard.
+        // Expired sessions are handled by the router's login redirect.
+        if (authenticated) {
+            homeNavigationPending = true;
+            showingSection = false;
+            web.loadUrl(ROUTER_HOME_URL);
+        } else {
+            initialDashboardShown = false;
+            showLogin();
+            web.loadUrl(START_URL);
+        }
+    }
+
     @Override protected void onSaveInstanceState(Bundle out) {
         if (web != null) web.saveState(out);
         super.onSaveInstanceState(out);
     }
 
     @Override protected void onDestroy() {
+        stopNetworkMonitoring();
+        routerProbeExecutor.shutdownNow();
+        mainHandler.removeCallbacksAndMessages(null);
         if (web != null) web.destroy();
         super.onDestroy();
     }
