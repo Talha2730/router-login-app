@@ -1,19 +1,19 @@
-# D-Link WiFi v1.6 — Live Router Home Dashboard
+# D-Link WiFi v1.7 — Compact mobile dashboard
 
-A lightweight Android app for the local D-Link DWR-M960 router at `http://192.168.0.1/login.htm`.
+A small Android WebView application for the D-Link DWR-M960 at `http://192.168.0.1/login.htm`.
 
-## Changes in v1.6
-- Removed the separate **Home** card and the unreliable duplicate status tiles that showed dashes.
-- The **actual, authenticated D-Link Home page** is embedded at the top of the native Router Dashboard. Signal intensity, network status, connected clients, provider, uptime and IP information are rendered by the router's own page, not extracted or hardcoded.
-- Retained three native section cards: **Settings**, **Features** and **Management**.
-- Added a **Refresh** button above the live Home page and returned to Home after leaving a router section via **Menu**.
-- Kept **Logout**, **Exit**, the D-Link WiFi name/logo, larger headings and disabled pinch zoom.
+## v1.7 changes
 
-The live Home view is a fixed-height WebView inside the scrollable dashboard; scroll the dashboard to reach the control cards. Router content depends on an active Wi-Fi connection and an authenticated session.
+- Removed three redundant labels from the dashboard: **Router Dashboard**, **Your live router home and controls**, and **Live Router Status**.
+- Preserved the **actual live Home page** shown by the router, with its real signal, connected-client count, mobile network status, carrier, LTE band and uptime.
+- Added conservative bold styling for the router's status tables (label/value text) to make the original status screen clearer without changing authentication or router configuration.
+- Reduced blank space above the status page, sized the embedded Home view relative to the display height, and made the Settings / Features / Management cards more compact so they fit on typical phone screens. Vertical scrolling remains available on smaller phones.
+- Kept the **Refresh**, **Logout**, **Exit**, D-Link WiFi launcher icon/name and disabled pinch-to-zoom.
 
-## APK
-GitHub Actions → latest successful **Build Router Login APK** → **Artifacts** → **Router-Login-APK** → extract and install `app-debug.apk`.
+## Download
 
-If Android reports a certificate conflict, uninstall the previous app and install this APK again. Backup settings you changed on the router as appropriate before upgrades; the APK itself does not store router records.
+GitHub → Actions → most recent successful **Build Router Login APK** → Artifacts → **Router-Login-APK** → extract `app-debug.apk`.
 
-This build must still be verified on the DWR-M960 device because its admin page is only available on the local network.
+The app runs locally and needs a connection to the router's Wi-Fi. GitHub is only used to create the APK. The live page layout and font changes should be checked on the actual phone; some router firmware versions use different markup.
+
+If installing over an older GitHub debug APK causes a signing conflict, uninstall the older application first.
