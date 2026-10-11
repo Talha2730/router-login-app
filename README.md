@@ -1,18 +1,14 @@
-# D-Link WiFi Android app (v1.3)
+# D-Link WiFi Android app (v1.4)
 
-Lightweight Android wrapper for the local D-Link DWR-M960 router at `http://192.168.0.1/login.htm`.
+A lightweight local-router control app for `http://192.168.0.1/login.htm` on the D-Link DWR-M960.
 
-## Native router menu
-- **Home** — opens router Home page.
-- **Settings** — opens the router's Settings page.
-- **Features** — opens router Features page.
-- **Management** — opens router Management page.
-- **Logout** — router logout action.
-- **Exit** — closes the Android app (with confirmation).
+## Home — Quick Router Status
+The native Home Dashboard now contains easy-to-read cards for **Signal**, **Network Status**, **Provider**, **Connected Devices**, **Network Type**, **LTE Band**, **Connection Uptime**, and **IP Address**, with a **Refresh** button.
 
-Once logged in, users see a clean, touch-friendly two-by-two dashboard. Tapping a tile selects that section and displays its original router page. A small JavaScript bridge locates and uses the real menu elements in the original web page. It never reads or stores credentials. If the router firmware uses unsupported menu markup, the original menu is shown as fallback.
+These values come from the authenticated router page already open in the app. They are **not** hardcoded, downloaded from the internet, or sent to GitHub. Values not exposed by a particular router firmware are shown as a dash (—). Refresh explicitly opens the router Home section and re-reads it.
 
-The app fits legacy desktop-oriented router pages within the phone width and disables pinch zoom. Wi-Fi network access to 192.168.0.1 is required; the app does not require GitHub to run after installation.
+## Menu
+Home, Settings, Features, and Management remain separate, touch-friendly cards and use the router's original navigation. An Exit button closes the app. Pinch zoom stays disabled.
 
-## Build APK
-GitHub -> Actions -> latest successful **Build Router Login APK** -> Artifacts -> Router-Login-APK -> extract `app-debug.apk`.
+## Install
+Open GitHub Actions and choose the latest successful **Build Router Login APK**, then under **Artifacts** download **Router-Login-APK**. Extract and install `app-debug.apk`. Connect your Android phone to the router Wi-Fi first. The installed app does not require GitHub to work.
