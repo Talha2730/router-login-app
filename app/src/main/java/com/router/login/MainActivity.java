@@ -28,6 +28,9 @@ import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final String START_URL = "http://192.168.0.1/login.htm";
+    // Confirmed D-Link DWR-M960 home URL. Reloading it resets the router's
+    // in-page Settings/Features/Management view back to the actual Home tab.
+    private static final String ROUTER_HOME_URL = "http://192.168.0.1/main.html";
     private static final int TEAL = Color.rgb(0, 139, 163);
     private static final int INK = Color.rgb(23, 49, 65);
     private static final int PALE = Color.rgb(241, 247, 249);
@@ -42,6 +45,7 @@ public class MainActivity extends Activity {
     private boolean authenticated = false;
     private boolean showingSection = false;
     private boolean initialDashboardShown = false;
+    private boolean homeNavigationPending = false;
     private String bridgeSource;
     private String mobileLoginSource;
 
@@ -201,15 +205,20 @@ public class MainActivity extends Activity {
         addressParams.topMargin = dp(3);
         home.addView(address, addressParams);
 
-        Button logout = new Button(this);
-        logout.setText("Log out of router");
-        logout.setTextColor(TEAL);
-        logout.setAllCaps(false);
-        logout.setBackground(shape(Color.WHITE, 12, BORDER));
-        LinearLayout.LayoutParams logoutParams = new LinearLayout.LayoutParams(-1, dp(43));
-        logoutParams.topMargin = dp(4);
-        home.addView(logout, logoutParams);
-        logout.setOnClickListener(v -> logOut());
+        // A dedicated Home button instead of "Log out of router".
+        // It reopens the real router Home page, even after visiting Settings.
+        Button homeButton = new Button(this);
+        homeButton.setText("⌂  Home");
+        homeButton.setTextSize(16);
+        homeButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        homeButton.setTextColor(TEAL);
+        homeButton.setAllCaps(false);
+        homeButton.setBackground(shape(Color.WHITE, 12, BORDER));
+        LinearLayout.LayoutParams homeButtonParams = new LinearLayout.LayoutParams(-1, dp(52));
+        homeButtonParams.topMargin = dp(20);
+        homeButtonParams.bottomMargin = dp(18);
+        home.addView(homeButton, homeButtonParams);
+        homeButton.setOnClickListener(v -> returnToDashboard());
 
         root.addView(dashboard, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -217,7 +226,7 @@ public class MainActivity extends Activity {
         contentToolbar.setPadding(dp(12), dp(9), dp(12), dp(9));
         contentToolbar.setGravity(Gravity.CENTER_VERTICAL);
         Button backToMenu = new Button(this);
-        backToMenu.setText("‹  Menu");
+        backToMenu.setText("‹  Home");
         backToMenu.setAllCaps(false);
         backToMenu.setTextSize(13);
         backToMenu.setTextColor(TEAL);
@@ -238,7 +247,9 @@ public class MainActivity extends Activity {
     private int dashboardWebHeight() {
         float density = Math.max(0.1f, getResources().getDisplayMetrics().density);
         float heightDp = getResources().getDisplayMetrics().heightPixels / density;
-        return Math.max(224, Math.min(260, Math.round(heightDp * 0.31f)));
+        // Give the router's actual Live Home screen the visual priority.
+        // The other cards are deliberately below it in the scrollable page.
+        return Math.max(335, Math.min(420, Math.round(heightDp * 0.54f)));
     }
 
     private void attachWebToMainScreen() {
@@ -265,21 +276,34 @@ public class MainActivity extends Activity {
     }
 
     private void refreshRouterHome() {
-        if (!authenticated) {
-            Toast.makeText(this, "Please log in to your router first.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        web.evaluateJavascript("window.DLinkBridge && window.DLinkBridge.open('Home')", result -> {
-            if (!"true".equals(result)) web.reload();
-            web.postDelayed(this::fitPageToScreen, 400);
-            web.postDelayed(this::emphasizeLiveStatus, 650);
-            web.postDelayed(this::emphasizeLiveStatus, 1400);
-        });
+        returnToDashboard();
     }
 
     private void returnToDashboard() {
-        showDashboard();
-        refreshRouterHome();
+        if (!authenticated) {
+            showLogin();
+            return;
+        }
+        // Previously, only moving WebView back to the dashboard preserved the
+        // selected Settings page. Reload the known local router Home URL first.
+        // This works even when the router's JavaScript menu is currently hidden.
+        homeNavigationPending = true;
+        web.loadUrl(ROUTER_HOME_URL);
+
+        // Some firmware switches content asynchronously without a load event.
+        // Make the native Home screen visible after a short safety delay.
+        web.postDelayed(() -> {
+            if (!homeNavigationPending || !authenticated) return;
+            String current = web.getUrl();
+            if (current != null && current.contains("/login")) {
+                homeNavigationPending = false;
+                showLogin();
+            } else {
+                homeNavigationPending = false;
+                showDashboard();
+                web.postDelayed(this::fitPageToScreen, 250);
+            }
+        }, 1600);
     }
 
     private LinearLayout.LayoutParams cardParams(boolean right) {
@@ -353,11 +377,15 @@ public class MainActivity extends Activity {
             boolean menuReady = "true".equals(result);
             if (menuReady) {
                 authenticated = true;
-                if (!initialDashboardShown) {
+                if (homeNavigationPending) {
+                    homeNavigationPending = false;
+                    showDashboard();
+                } else if (!initialDashboardShown) {
                     initialDashboardShown = true;
                     showDashboard();
                 }
             } else if (url != null && url.toLowerCase(Locale.US).contains("login")) {
+                homeNavigationPending = false;
                 if (authenticated || !initialDashboardShown) showLogin();
             }
         });
@@ -387,6 +415,7 @@ public class MainActivity extends Activity {
     }
 
     private void showLogin() {
+        homeNavigationPending = false;
         authenticated = false;
         initialDashboardShown = false;
         showingSection = false;
