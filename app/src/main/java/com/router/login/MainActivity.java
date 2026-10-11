@@ -26,6 +26,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.EditText;
+import android.text.InputType;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -66,6 +68,9 @@ public class MainActivity extends Activity {
     // Optional per-device login defaults are added to the private, signed APK,
     // never uploaded with the public GitHub source or its unsigned build.
     private String localLoginFillSource = "";
+    private EncryptedLoginStore encryptedLoginStore;
+    private String savedLoginUsername = "admin";
+    private LinearLayout passwordBar;
     private static final long ROUTER_CHECK_INTERVAL_MS = 12000L;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback wifiCallback;
@@ -128,10 +133,21 @@ public class MainActivity extends Activity {
             String username = defaults.optString("username", "");
             String password = defaults.optString("password", "");
             if (!username.isEmpty() && !password.isEmpty()) {
+                savedLoginUsername = username;
                 localLoginFillSource = buildLocalLoginFillScript(username, password);
             }
         } catch (Exception ignored) {
             // No password is ever required or committed to the public repo.
+        }
+
+        // The mobile owner can replace an old password without rebuilding
+        // the APK. An Android Keystore encryption key protects saved values.
+        encryptedLoginStore = new EncryptedLoginStore(this);
+        EncryptedLoginStore.Login savedLogin = encryptedLoginStore.read();
+        if (savedLogin != null) {
+            savedLoginUsername = savedLogin.username;
+            localLoginFillSource = buildLocalLoginFillScript(
+                savedLogin.username, savedLogin.password);
         }
         buildLayout();
         configureWebView();
@@ -257,6 +273,24 @@ public class MainActivity extends Activity {
         root.addView(routerConnectionNotice,
             new LinearLayout.LayoutParams(-1, dp(37)));
 
+        // A clear native control is available on Login AND Management pages,
+        // so a changed router password can be saved immediately afterward.
+        passwordBar = new LinearLayout(this);
+        passwordBar.setPadding(dp(10), dp(3), dp(12), dp(3));
+        passwordBar.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+        Button updateAutofill = new Button(this);
+        updateAutofill.setText("Update Autofill Password");
+        updateAutofill.setTextSize(12);
+        updateAutofill.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        updateAutofill.setAllCaps(false);
+        updateAutofill.setTextColor(TEAL);
+        updateAutofill.setBackground(shape(Color.WHITE, 9, BORDER));
+        passwordBar.addView(updateAutofill,
+            new LinearLayout.LayoutParams(dp(194), dp(38)));
+        root.addView(passwordBar,
+            new LinearLayout.LayoutParams(-1, dp(44)));
+        updateAutofill.setOnClickListener(v -> showUpdatePasswordDialog());
+
         dashboard = new ScrollView(this);
         dashboard.setFillViewport(true);
         LinearLayout home = vertical();
@@ -333,6 +367,19 @@ public class MainActivity extends Activity {
         homeButtonParams.bottomMargin = dp(18);
         home.addView(homeButton, homeButtonParams);
         homeButton.setOnClickListener(v -> returnToDashboard());
+
+        // Also accessible from Dashboard, without wasting room above Live Status.
+        Button saveAutofill = new Button(this);
+        saveAutofill.setText("Update Autofill Password");
+        saveAutofill.setAllCaps(false);
+        saveAutofill.setTextColor(TEAL);
+        saveAutofill.setTextSize(12);
+        saveAutofill.setBackground(shape(PALE, 10, BORDER));
+        LinearLayout.LayoutParams autofillParams =
+            new LinearLayout.LayoutParams(-1, dp(40));
+        autofillParams.bottomMargin = dp(12);
+        home.addView(saveAutofill, autofillParams);
+        saveAutofill.setOnClickListener(v -> showUpdatePasswordDialog());
 
         root.addView(dashboard, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -537,6 +584,80 @@ public class MainActivity extends Activity {
         web.evaluateJavascript(script, null);
     }
 
+
+    /**
+     * The router cannot disclose a changed administrator password.
+     * Ask the owner to enter it once, then save it only on this device.
+     * Do not read passwords out of router settings pages.
+     */
+    private void showUpdatePasswordDialog() {
+        LinearLayout content = vertical();
+        content.setPadding(dp(20), dp(9), dp(20), dp(3));
+
+        TextView explanation = text(
+            "After changing your router password, enter the NEW password once. "
+            + "It will be encrypted on this phone and used for future login autofill. "
+            + "This does not change the password on the router.",
+            13, INK, false);
+        content.addView(explanation,
+            new LinearLayout.LayoutParams(-1, -2));
+
+        EditText username = new EditText(this);
+        username.setSingleLine(true);
+        username.setTextSize(15);
+        username.setHint("Router username");
+        username.setInputType(InputType.TYPE_CLASS_TEXT
+            | InputType.TYPE_TEXT_VARIATION_NORMAL);
+        username.setText(savedLoginUsername);
+        LinearLayout.LayoutParams userParams =
+            new LinearLayout.LayoutParams(-1, dp(52));
+        userParams.topMargin = dp(10);
+        content.addView(username, userParams);
+
+        EditText password = new EditText(this);
+        password.setSingleLine(true);
+        password.setTextSize(15);
+        password.setHint("New router password");
+        password.setInputType(InputType.TYPE_CLASS_TEXT
+            | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        content.addView(password, new LinearLayout.LayoutParams(-1, dp(52)));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("Update saved login")
+            .setView(content)
+            .setNegativeButton("Cancel", (d, which) -> { })
+            .setPositiveButton("Save on this phone", null)
+            .create();
+
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String user = username.getText().toString().trim();
+                String pass = password.getText().toString();
+                if (user.isEmpty() || pass.isEmpty()) {
+                    Toast.makeText(this, "Enter both username and new password.",
+                        Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if (!encryptedLoginStore.save(user, pass)) {
+                    Toast.makeText(this, "Could not securely save password.",
+                        Toast.LENGTH_LONG).show();
+                    return;
+                }
+                savedLoginUsername = user;
+                localLoginFillSource = buildLocalLoginFillScript(user, pass);
+                dialog.dismiss();
+                Toast.makeText(this, "Autofill password updated on this phone.",
+                    Toast.LENGTH_LONG).show();
+
+                // Reload the Login form to discard a previously auto-filled
+                // old password. Never reload router Settings/Management forms.
+                if (web != null && isLocalRouterLoginUrl(web.getUrl()))
+                    web.loadUrl(START_URL);
+            });
+        });
+        dialog.show();
+    }
+
     private void showLogin() {
         homeNavigationPending = false;
         authenticated = false;
@@ -544,6 +665,7 @@ public class MainActivity extends Activity {
         showingSection = false;
         dashboard.setVisibility(View.GONE);
         contentToolbar.setVisibility(View.GONE);
+        passwordBar.setVisibility(View.VISIBLE);
         attachWebToMainScreen();
     }
 
@@ -559,6 +681,7 @@ public class MainActivity extends Activity {
         attachWebToDashboard();
         dashboard.setVisibility(View.VISIBLE);
         contentToolbar.setVisibility(View.GONE);
+        passwordBar.setVisibility(View.GONE);
         webHolder.setVisibility(View.VISIBLE);
         dashboard.smoothScrollTo(0, 0);
         web.postDelayed(this::emphasizeLiveStatus, 250);
@@ -575,6 +698,7 @@ public class MainActivity extends Activity {
         sectionHeading.setText(section);
         dashboard.setVisibility(View.GONE);
         contentToolbar.setVisibility(View.VISIBLE);
+        passwordBar.setVisibility(View.VISIBLE);
         attachWebToMainScreen();
         web.post(() -> {
             fitPageToScreen();
