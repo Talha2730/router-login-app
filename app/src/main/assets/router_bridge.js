@@ -224,16 +224,20 @@
         if (table && table.querySelectorAll("tr").length <= 3) {
           var tiles = table.querySelectorAll("td,th");
           for (var t = 0; t < tiles.length; t++) {
-            tiles[t].style.setProperty("font-weight", "650", "important");
-            tiles[t].style.setProperty("font-size", "16px", "important");
-            tiles[t].style.setProperty("color", "#183a4d", "important");
+            // Increase readable text size, but keep long labels inside the
+            // router's fixed-width status table cells.
+            var tileLength = normalize(tiles[t].textContent).length;
+            var tileSize = tileLength > 18 ? "17px" : "21px";
+            tiles[t].style.setProperty("font-weight", "700", "important");
+            tiles[t].style.setProperty("font-size", tileSize, "important");
+            tiles[t].style.setProperty("color", "#163749", "important");
             tiles[t].style.setProperty("line-height", "1.25", "important");
           }
         }
         el.style.setProperty("font-weight", "700", "important");
         el.style.setProperty("font-size",
-          isHeading ? "23px" : isClients ? "18px" :
-          value.length > 16 ? "14px" : "17px", "important");
+          isHeading ? "26px" : isClients ? "22px" :
+          value.length > 16 ? "18px" : "22px", "important");
         el.style.setProperty("color", "#14384b", "important");
         changed++;
       }
