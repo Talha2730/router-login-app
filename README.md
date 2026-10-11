@@ -1,15 +1,18 @@
-# D-Link WiFi (Router Login) — Android
+# D-Link WiFi Android app (v1.3)
 
-Lightweight offline-capable WebView wrapper for the D-Link router page at `http://192.168.0.1/login.htm`.
-To use the app, connect your Android phone to the same router Wi-Fi.
+Lightweight Android wrapper for the local D-Link DWR-M960 router at `http://192.168.0.1/login.htm`.
 
-- **Fixed screen:** WebView pinch-zoom and zoom controls disabled.
-- **Desktop layout fit:** old router HTML scales down automatically to the phone width, preserving original navigation.
-- **App name:** D-Link WiFi
-- **Logo:** user-supplied blue Wi-Fi logo (launcher icon, including adaptive icon on Android 8+).
-- **APK version:** 1.2
+## Native router menu
+- **Home** — opens router Home page.
+- **Settings** — opens the router's Settings page.
+- **Features** — opens router Features page.
+- **Management** — opens router Management page.
+- **Logout** — router logout action.
+- **Exit** — closes the Android app (with confirmation).
 
-## Build and install
-GitHub Actions -> **Build Router Login APK** -> latest successful run -> **Artifacts** -> **Router-Login-APK**. Extract `app-debug.apk` and install on the phone.
-If the phone still shows the previous app name or logo, uninstall the old Router Login app before installing the new APK.
-The router login credentials are used on the local router page; they are not uploaded to GitHub.
+Once logged in, users see a clean, touch-friendly two-by-two dashboard. Tapping a tile selects that section and displays its original router page. A small JavaScript bridge locates and uses the real menu elements in the original web page. It never reads or stores credentials. If the router firmware uses unsupported menu markup, the original menu is shown as fallback.
+
+The app fits legacy desktop-oriented router pages within the phone width and disables pinch zoom. Wi-Fi network access to 192.168.0.1 is required; the app does not require GitHub to run after installation.
+
+## Build APK
+GitHub -> Actions -> latest successful **Build Router Login APK** -> Artifacts -> Router-Login-APK -> extract `app-debug.apk`.
