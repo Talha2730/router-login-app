@@ -38,6 +38,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.LinkedHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.json.JSONTokener;
 import org.json.JSONObject;
 import java.net.HttpURLConnection;
@@ -63,6 +65,12 @@ public class MainActivity extends Activity {
     private LinearLayout dashboardContent;
     private final LinkedHashMap<String, TextView> mobileStatusValues = new LinkedHashMap<>();
     private TextView mobileStatusMessage;
+    private View mobileStatusPanel;
+    private Button originalStatusButton;
+    private LinearLayout liveSignalBars;
+    private boolean inlineOriginalFallback = false;
+    private boolean statusReadSuccessfully = false;
+    private long statusCheckEpoch = 0L;
     private boolean statusQueryPending = false;
     private final Runnable statusRefreshMonitor = new Runnable() {
         @Override public void run() {
@@ -335,7 +343,8 @@ public class MainActivity extends Activity {
 
         // Readable Android-native cards display whitelisted router status
         // fields rather than shrinking a 980px-wide desktop interface.
-        home.addView(createMobileStatusPanel());
+        mobileStatusPanel = createMobileStatusPanel();
+        home.addView(mobileStatusPanel);
 
         // Keep the original authenticated router page alive off-screen (1dp):
         // it supplies the actual values and still handles router navigation.
@@ -348,17 +357,25 @@ public class MainActivity extends Activity {
         web.setBackgroundColor(Color.WHITE);
         webHolder.addView(web, new FrameLayout.LayoutParams(-1, -1));
 
-        Button original = new Button(this);
-        original.setText("Open Original Router Page");
-        original.setTextSize(12);
-        original.setAllCaps(false);
-        original.setTextColor(TEAL);
-        original.setBackground(shape(Color.WHITE, 10, BORDER));
+        originalStatusButton = new Button(this);
+        originalStatusButton.setText("Open Original Router Page");
+        originalStatusButton.setTextSize(12);
+        originalStatusButton.setAllCaps(false);
+        originalStatusButton.setTextColor(TEAL);
+        originalStatusButton.setBackground(shape(Color.WHITE, 10, BORDER));
         LinearLayout.LayoutParams originalParams =
             new LinearLayout.LayoutParams(-1, dp(40));
         originalParams.bottomMargin = dp(16);
-        home.addView(original, originalParams);
-        original.setOnClickListener(v -> showOriginalHomePage());
+        home.addView(originalStatusButton, originalParams);
+        originalStatusButton.setOnClickListener(v -> {
+            if (inlineOriginalFallback) {
+                setInlineOriginalFallback(false);
+                beginStatusLoadingWindow();
+                readMobileRouterStatus();
+            } else {
+                showOriginalHomePage();
+            }
+        });
 
         TextView sectionsHeading = text("Router Controls", 17, INK, true);
         LinearLayout.LayoutParams sectionsParams =
@@ -494,13 +511,91 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams labelParams =
             new LinearLayout.LayoutParams(-1, -2);
         labelParams.topMargin = dp(4);
-        card.addView(value, labelParams);
+        if ("signal".equals(key)) {
+            LinearLayout signalRow = new LinearLayout(this);
+            signalRow.setGravity(Gravity.CENTER_VERTICAL);
+            signalRow.addView(value,
+                new LinearLayout.LayoutParams(0, -2, 1f));
+            liveSignalBars = new LinearLayout(this);
+            liveSignalBars.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            for (int i = 0; i < 4; i++) {
+                View bar = new View(this);
+                bar.setBackground(shape(Color.rgb(202, 211, 219), 2,
+                    Color.TRANSPARENT));
+                LinearLayout.LayoutParams barParams =
+                    new LinearLayout.LayoutParams(dp(5), dp(7 + 4 * i));
+                if (i > 0) barParams.leftMargin = dp(3);
+                liveSignalBars.addView(bar, barParams);
+            }
+            signalRow.addView(liveSignalBars,
+                new LinearLayout.LayoutParams(-2, dp(24)));
+            card.addView(signalRow, labelParams);
+        } else {
+            card.addView(value, labelParams);
+        }
         mobileStatusValues.put(key, value);
         return card;
     }
 
-    // Query the WebView only while displaying the authenticated Home page.
-    // No passwords, forms or arbitrary page text are read by this feature.
+    private void updateLiveSignalBars(String rawValue) {
+        if (liveSignalBars == null) return;
+        int count = 0;
+        try {
+            Matcher match = Pattern.compile("(-?\\d{1,3})\\s*dBm",
+                Pattern.CASE_INSENSITIVE).matcher(rawValue);
+            if (match.find()) {
+                int dbm = Integer.parseInt(match.group(1));
+                count = (dbm <= -95) ? 1 : (dbm <= -76 ? 3 : 4);
+            }
+        } catch (Exception ignored) { }
+        int activeColor = count == 1 ? Color.rgb(215, 60, 64)
+            : (count == 3 ? Color.rgb(218, 168, 31)
+            : Color.rgb(34, 167, 82));
+        for (int i = 0; i < liveSignalBars.getChildCount(); i++) {
+            View bar = liveSignalBars.getChildAt(i);
+            int color = i < count ? activeColor : Color.rgb(202, 211, 219);
+            bar.setBackground(shape(color, 2, Color.TRANSPARENT));
+        }
+    }
+
+    /**
+     * The router's firmware can update status asynchronously. Give it a few
+     * seconds after a Home navigation before deciding extraction is unsupported.
+     * If reading still fails, show the original page automatically instead
+     * of leaving 12 empty, misleading status cards on screen.
+     */
+    private void beginStatusLoadingWindow() {
+        statusReadSuccessfully = false;
+        final long generation = ++statusCheckEpoch;
+        if (mobileStatusMessage != null)
+            mobileStatusMessage.setText("Reading live status from router...");
+        web.postDelayed(() -> {
+            if (generation != statusCheckEpoch || statusReadSuccessfully
+                    || !authenticated || showingSection) return;
+            setInlineOriginalFallback(true);
+        }, 8000);
+    }
+
+    private void setInlineOriginalFallback(boolean showOriginal) {
+        inlineOriginalFallback = showOriginal;
+        if (mobileStatusPanel != null)
+            mobileStatusPanel.setVisibility(showOriginal ? View.GONE : View.VISIBLE);
+        if (originalStatusButton != null)
+            originalStatusButton.setText(showOriginal
+                ? "Retry Large Live Cards" : "Open Original Router Page");
+        if (webHolder != null && webHolder.getParent() == dashboardContent) {
+            ViewGroup.LayoutParams holder = webHolder.getLayoutParams();
+            if (holder != null) {
+                holder.height = dp(showOriginal ? dashboardWebHeight() : 1);
+                webHolder.setLayoutParams(holder);
+            }
+            web.setLayoutParams(new FrameLayout.LayoutParams(-1,
+                showOriginal ? -1 : dp(420)));
+            web.postDelayed(this::fitPageToScreen, 200);
+        }
+    }
+
+    // Query only labeled, non-secret status fields from the local router page.
     private void readMobileRouterStatus() {
         if (web == null || !authenticated || showingSection || statusQueryPending)
             return;
@@ -524,18 +619,21 @@ public class MainActivity extends Activity {
                         String value = values.optString(key, "").trim();
                         if (!value.isEmpty() && value.length() <= 75) {
                             mobileStatusValues.get(key).setText(value);
+                            if ("signal".equals(key)) updateLiveSignalBars(value);
                             populated++;
                         }
                     }
                     if (populated > 0) {
+                        statusReadSuccessfully = true;
                         mobileStatusMessage.setText("Live values from D-Link router");
+                        if (inlineOriginalFallback) setInlineOriginalFallback(false);
                     } else {
                         mobileStatusMessage.setText(
-                            "Router status loading. Refresh or open original page.");
+                            "Waiting for live status; original page opens automatically if unavailable.");
                     }
                 } catch (Exception ignored) {
                     mobileStatusMessage.setText(
-                        "Router status unavailable. Open original page.");
+                        "Reading live status. Original page will be shown if unavailable.");
                 }
             });
     }
@@ -559,24 +657,32 @@ public class MainActivity extends Activity {
     }
 
     private void attachWebToMainScreen() {
-        if (webHolder.getParent() == root) return;
-        if (webHolder.getParent() instanceof ViewGroup)
-            ((ViewGroup) webHolder.getParent()).removeView(webHolder);
-        LinearLayout.LayoutParams params =
-            new LinearLayout.LayoutParams(-1, 0, 1f);
-        params.setMargins(dp(7), dp(2), dp(7), dp(7));
-        root.addView(webHolder, params);
+        if (webHolder.getParent() != root) {
+            if (webHolder.getParent() instanceof ViewGroup)
+                ((ViewGroup) webHolder.getParent()).removeView(webHolder);
+            LinearLayout.LayoutParams params =
+                new LinearLayout.LayoutParams(-1, 0, 1f);
+            params.setMargins(dp(7), dp(2), dp(7), dp(7));
+            root.addView(webHolder, params);
+        }
+        // Full-size WebView for Login/Settings/Features/Management.
+        web.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
         webHolder.setVisibility(View.VISIBLE);
     }
 
     private void attachWebToDashboard() {
-        if (webHolder.getParent() == dashboardContent) return;
-        if (webHolder.getParent() instanceof ViewGroup)
-            ((ViewGroup) webHolder.getParent()).removeView(webHolder);
-        LinearLayout.LayoutParams params =
-            new LinearLayout.LayoutParams(-1, dp(1));
-        // Dashboard order: refresh header, native status cards, live WebView.
-        dashboardContent.addView(webHolder, 2, params);
+        if (webHolder.getParent() != dashboardContent) {
+            if (webHolder.getParent() instanceof ViewGroup)
+                ((ViewGroup) webHolder.getParent()).removeView(webHolder);
+            LinearLayout.LayoutParams params =
+                new LinearLayout.LayoutParams(-1,
+                    dp(inlineOriginalFallback ? dashboardWebHeight() : 1));
+            dashboardContent.addView(webHolder, 2, params);
+        }
+        // A 1dp-high WebView doesn't render many routers' status tables.
+        // Keep the view itself at 420dp while its parent clips the output
+        // to 1dp. The Android-native cards above remain the visible UI.
+        setInlineOriginalFallback(inlineOriginalFallback);
         webHolder.setVisibility(View.VISIBLE);
         web.postDelayed(this::fitPageToScreen, 150);
     }
@@ -812,6 +918,9 @@ public class MainActivity extends Activity {
         for (TextView status : mobileStatusValues.values()) status.setText("—");
         if (mobileStatusMessage != null)
             mobileStatusMessage.setText("Connect and log in to D-Link router.");
+        updateLiveSignalBars("");
+        statusCheckEpoch++;
+        statusReadSuccessfully = false;
         showingSection = false;
         dashboard.setVisibility(View.GONE);
         contentToolbar.setVisibility(View.GONE);
@@ -834,8 +943,10 @@ public class MainActivity extends Activity {
         passwordBar.setVisibility(View.GONE);
         webHolder.setVisibility(View.VISIBLE);
         dashboard.smoothScrollTo(0, 0);
-        web.postDelayed(this::readMobileRouterStatus, 400);
-        web.postDelayed(this::readMobileRouterStatus, 1300);
+        beginStatusLoadingWindow();
+        web.postDelayed(this::readMobileRouterStatus, 500);
+        web.postDelayed(this::readMobileRouterStatus, 1800);
+        web.postDelayed(this::readMobileRouterStatus, 5000);
     }
 
     private void openSection(String section) {
