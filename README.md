@@ -1,24 +1,33 @@
-# D-Link WiFi v2.1 — Private Personal Login Autofill
+# D-Link WiFi v2.2 — Changeable Password Autofill
 
-Lightweight Android control app for the D-Link DWR-M960 local router at `http://192.168.0.1/login.htm`.
+Lightweight Android control app for a D-Link DWR-M960 router at `http://192.168.0.1/login.htm`.
 
-## v2.1
+## Update your saved router password without rebuilding the APK
 
-- The router Login form supports **optional, private username/password autofill**, enabled only on the authenticated owner's **personal signed APK** and **only on the local router host** `http://192.168.0.1`.
-- Autofill fills empty username/password fields. It never clicks **Login** automatically and does not transmit credentials to any outside service.
-- The optional `assets/private_login_defaults.json` is **not in this public repository**, not in GitHub builds, and never printed to build logs.
-- The real login values are only packaged into a private signed APK outside GitHub. Anyone who obtains that APK can extract the values: **do not share the personal APK**. For good security, change any factory-default router administrator password.
-- The prior D-Link WiFi logo, mobile-friendly Login screen, fixed zoom, Home dashboard, Settings/Features/Management, Exit button, and automatic reconnect are unchanged.
-- Version code 12 (version name 2.1), Android target SDK 35.
+The router does not disclose its new admin password after it has been changed. Therefore, **changing the router password cannot automatically disclose the new value to the app**.
 
-## APK builds
+To keep Autofill in sync safely:
+1. Change your login password in the router Management/Settings page.
+2. Tap **Update Autofill Password** in the app (also available on the login screen and near the dashboard Home button).
+3. Enter the new password once and tap **Save on this phone**.
+4. From then on, Autofill uses that new saved password every time the D-Link login form opens; no APK rebuild is needed.
 
-GitHub Actions can build the usual **Debug APK** and a **non-debuggable unsigned Release APK**. The GitHub build intentionally **does not contain personalized credentials**. Personal signed copies are created offline with an existing locally backed-up private signing certificate.
+This **does not automatically click Login** or change the router's password by itself.
 
-The Google Play Protect warning "Play Protect hasn't seen an app from this developer before" relates to its recognition and scanning of sideloaded apps. A release signature or API level alone **cannot permanently disable this protection**. See [Google's official Play Protect developer guidance](https://developers.google.com/android/play-protect/warning-dev-guidance).
+### Privacy
 
-## Supported network
+The new password is saved only on the phone in Android Keystore AES-GCM encrypted storage. The encryption key cannot be exported from Android Keystore and cloud backup of app data is disabled. The public GitHub source and GitHub Actions builds do not contain personalized passwords. The private signed personal APK may contain the initial login default selected by its owner, so **do not share the personal APK**. Use a strong router password instead of `admin` if the firmware allows.
 
-- Local router Login: `http://192.168.0.1/login.htm`
-- Router Home: `http://192.168.0.1/main.html`
-- Auto reconnect while app is open; recheck when reopened; no background auto-launch.
+## Features preserved
+- Wi-Fi auto-reconnect when the app is open, including routers without Internet access.
+- Live router Home dashboard showing signal, connected clients, carrier, status and uptime.
+- Settings, Features and Management buttons.
+- Home, Refresh and Exit.
+- Mobile screen fit, fixed zoom, D-Link WiFi icon.
+- Android 15 target SDK 35, scoped HTTP access to the local router only.
+
+## Build
+
+GitHub Actions → latest successful **Build Unsigned Release APK** for version 2.2 → `DLink-WiFi-Unsigned-Release`. An actual installable personal Release APK must then be signed privately with the same offline certificate used for the previous version.
+
+Google Play Protect can still show an "unknown developer" warning for an independently distributed app. This cannot be disabled from within the app; do not disable Play Protect.
