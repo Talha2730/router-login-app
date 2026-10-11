@@ -1,0 +1,88 @@
+name: Build Jazz WiFi APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'jazz-wifi/**'
+      - '.github/workflows/build-jazz-wifi.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Jazz WiFi Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Android SDK manager not found"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build standalone Jazz WiFi app
+        shell: bash
+        working-directory: jazz-wifi
+        run: |
+          set -euxo pipefail
+          gradle --no-daemon --stacktrace :app:assembleDebug :app:assembleRelease
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Verify Android SDK and APK signature
+        shell: bash
+        working-directory: jazz-wifi
+        run: |
+          set -euo pipefail
+          DEBUG="app/build/outputs/apk/debug/app-debug.apk"
+          RELEASE="app/build/outputs/apk/release/app-release-unsigned.apk"
+          AAPT="${ANDROID_HOME}/build-tools/35.0.0/aapt"
+          APKSIGNER="${ANDROID_HOME}/build-tools/35.0.0/apksigner"
+          "$AAPT" dump badging "$DEBUG" | grep -E '^(package:|sdkVersion:|targetSdkVersion:)'
+          "$AAPT" dump badging "$DEBUG" | grep -F "targetSdkVersion:'35'"
+          "$APKSIGNER" verify --verbose "$DEBUG"
+          "$AAPT" dump badging "$RELEASE" | grep -F "targetSdkVersion:'35'"
+          if "$AAPT" dump badging "$RELEASE" | grep -q 'application-debuggable'; then
+            echo "::error::Release is unexpectedly debuggable"
+            exit 1
+          fi
+
+      - name: Upload Jazz WiFi test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jazz-WiFi-Debug-APK
+          path: jazz-wifi/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload unsigned release for private signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jazz-WiFi-Unsigned-Release
+          path: jazz-wifi/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 14
+          if-no-files-found: error
