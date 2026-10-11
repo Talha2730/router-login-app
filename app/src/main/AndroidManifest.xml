@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
     <application
         android:label="D-Link WiFi"
+        android:allowBackup="false"
         android:icon="@drawable/router_icon"
         android:roundIcon="@drawable/router_icon"
         android:networkSecurityConfig="@xml/network_security_config"
