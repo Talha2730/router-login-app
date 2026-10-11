@@ -8,11 +8,14 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Build;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.WindowInsets;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebResourceError;
@@ -144,6 +147,21 @@ public class MainActivity extends Activity {
         root = vertical();
         root.setBackgroundColor(PALE);
         setContentView(root);
+
+        // Android 15 (targetSdk 35) displays apps behind the status/navigation
+        // bars by default. Keep login fields and router buttons out of them.
+        if (Build.VERSION.SDK_INT >= 35) {
+            root.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+                Insets safe = windowInsets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+                return windowInsets;
+            });
+            getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                    | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+            root.requestApplyInsets();
+        }
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
