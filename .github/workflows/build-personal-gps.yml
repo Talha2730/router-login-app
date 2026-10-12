@@ -26,6 +26,18 @@ jobs:
           echo 'a75bc5a09d4c706182102b1d7997e3666a3ea948e96a6b30cf633a0d8a4dc7a6  /tmp/personal-gps-source.tar.xz' | sha256sum -c -
           tar -xJf /tmp/personal-gps-source.tar.xz -C gps-app
           test -s gps-app/app/src/main/java/com/personal/gpsmapcamera/MainActivity.java
+      - name: Fix GPS EXIF compatibility for platform Android
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path("gps-app/app/src/main/java/com/personal/gpsmapcamera/MainActivity.java")
+          code=source.read_text()
+          old="exif.setLatLong(opts.latitude,opts.longitude);"
+          new="double[] gpsCoordinates={opts.latitude,opts.longitude};\n                String[] gpsFractions=new String[2];\n                for(int gpsIndex=0;gpsIndex<2;gpsIndex++){\n                    double coordinate=Math.abs(gpsCoordinates[gpsIndex]);\n                    int degrees=(int)coordinate;\n                    double minutesFloat=(coordinate-degrees)*60.0;\n                    int minutes=(int)minutesFloat;\n                    long secondsThousandths=Math.round((minutesFloat-minutes)*60000.0);\n                    gpsFractions[gpsIndex]=degrees+\"/1,\"+minutes+\"/1,\"+secondsThousandths+\"/1000\";\n                }\n                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE,gpsFractions[0]);\n                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF,opts.latitude>=0?\"N\":\"S\");\n                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE,gpsFractions[1]);\n                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF,opts.longitude>=0?\"E\":\"W\");"
+          assert code.count(old)==1, "Expected GPS EXIF call not found"
+          source.write_text(code.replace(old,new))
+          PY
       - name: Install Java 17
         uses: actions/setup-java@v4
         with:
