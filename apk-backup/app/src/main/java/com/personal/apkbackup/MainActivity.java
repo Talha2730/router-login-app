@@ -29,12 +29,12 @@ public class MainActivity extends Activity {
         root=new LinearLayout(this);root.setOrientation(1);root.setPadding(14,18,14,10);root.setBackgroundColor(BG);
         setContentView(root);
         label("Personal APK Backup",24,true);
-        label("Offline • Installed app APK & split APK backup • Restore",12,false);
+        label("Save & share installable APK files • No receiver app required",12,false);
         LinearLayout tools=new LinearLayout(this);tools.setOrientation(0);
-        Button restore=button("INSTALL BACKUP");tools.addView(restore,new LinearLayout.LayoutParams(0,52,1));
+        
         Button toggle=button("SYSTEM APPS");tools.addView(toggle,new LinearLayout.LayoutParams(0,52,1));
         root.addView(tools);
-        restore.setOnClickListener(v->openBackup());
+        
         toggle.setOnClickListener(v->{showSystem=!showSystem;toggle.setText(showSystem?"USER APPS":"SYSTEM APPS");refresh();});
         status=label("Loading installed applications...",12,false);
         ScrollView sc=new ScrollView(this);root.addView(sc,new LinearLayout.LayoutParams(-1,0,1));
@@ -55,7 +55,7 @@ public class MainActivity extends Activity {
             apps.add(a);
         }
         Collections.sort(apps,(a,b)->pm.getApplicationLabel(a).toString().compareToIgnoreCase(pm.getApplicationLabel(b).toString()));
-        status.setText(apps.size()+" apps available. Tap one to export its installer.");
+        status.setText(apps.size()+" apps. Tap to export an APK; split apps need a split installer.");
         for(ApplicationInfo a:apps){
             LinearLayout row=new LinearLayout(this);row.setOrientation(1);row.setPadding(10,9,10,9);
             row.setBackgroundColor(PANEL);
@@ -81,6 +81,15 @@ public class MainActivity extends Activity {
              startActivityForResult(i,SAVE);
           }).setNegativeButton("Cancel",null).show();
     }
+    private void shareBackup(Uri uri,boolean split){
+        Intent send=new Intent(Intent.ACTION_SEND);
+        send.setType(split?"application/zip":"application/vnd.android.package-archive");
+        send.putExtra(Intent.EXTRA_STREAM,uri);
+        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        send.setClipData(ClipData.newUri(getContentResolver(),"Installer backup",uri));
+        try{startActivity(Intent.createChooser(send,split?"Share split APK backup":"Send installable APK"));}
+        catch(Exception e){message("Use your Files app to send the saved backup: "+e.getMessage());}
+    }
     private void openBackup(){
         Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");
@@ -105,7 +114,20 @@ public class MainActivity extends Activity {
                             zip.finish();
                         }
                     }
-                    runOnUiThread(()->message("Backup saved. Share the .apk/.apks file to your other phone."));
+                    runOnUiThread(()->{
+                        message("Backup saved.");
+                        if(app.splitSourceDirs==null||app.splitSourceDirs.length==0){
+                            new AlertDialog.Builder(this).setTitle("Ready to send APK")
+                            .setMessage("Send this .apk directly to another phone. Open the file there to install it without Personal APK Backup. Android may request permission to install unknown apps.")
+                            .setPositiveButton("SEND APK",(d,w)->shareBackup(uri,false))
+                            .setNegativeButton("Done",null).show();
+                        }else{
+                            new AlertDialog.Builder(this).setTitle("Split APK backup")
+                            .setMessage("This app has multiple APK parts, so Android cannot install its .apks archive by tapping it. A compatible split-APK installer is needed on the receiving phone. Creating a reliable single APK from splits is not supported.")
+                            .setPositiveButton("SHARE .APKS",(d,w)->shareBackup(uri,true))
+                            .setNegativeButton("Done",null).show();
+                        }
+                    });
                 }catch(Exception e){runOnUiThread(()->message("Backup failed: "+e.getMessage()));}
             }).start();
         }else if(req==OPEN){
