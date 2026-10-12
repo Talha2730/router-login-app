@@ -44,7 +44,7 @@ p=root/"StampRenderer.java"
 s=p.read_text()
 s=s.replace("public float textScale=1f;","public float textScale=1f;\n        public float titleTextScale=1f;\n        public float detailsTextScale=1f;")
 start=s.index("        float boxH=",s.index("private static void videoStamp"))
-end=s.index("        Paint p=new Paint",start)
+end=s.index("        Paint pnt=new Paint",start)
 s=s[:start]+'''        float titleFont=Math.max(10f,14.5f*scale)*1.43f*o.titleTextScale;
         float detailFont=Math.max(10f,14.5f*scale)*0.92f*o.detailsTextScale;
         float rowStep=Math.max(detailFont*1.3f,17f*scale);
