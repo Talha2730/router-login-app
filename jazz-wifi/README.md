@@ -1,58 +1,26 @@
-# Jazz WiFi v1.0 — Android App (Private DNS Friendly)
+# Jazz WiFi v1.1 — exact jazz.wifi URL with Private DNS enabled
 
-An **independent Android application** for the router page:
-`http://jazz.wifi/index.html`. This project is inside `jazz-wifi/`
-and **does not overwrite the existing D-Link WiFi app**.
+The only router web address exposed to Android WebView is:
 
-## Why `jazz.wifi` sometimes fails with Android Private DNS
+**http://jazz.wifi/index.html**
 
-`jazz.wifi` is a router-local hostname. Private DNS may send DNS lookups
-to a resolver that cannot resolve that private name. The solution here
-does **not** disable or override Android's Private DNS setting.
+The previous version guessed router IPs like `192.168.8.1` and directly navigated to numeric addresses. That could show a false connection status and fail when the router uses virtual-host routing.
 
-This app:
+## Private DNS fix
 
-1. Requires a Wi-Fi connection to the Jazz router, then locates the
-   connected Wi-Fi network even when Android's mobile data is the default.
-2. Uses the Wi-Fi DHCP default gateway and a **direct UDP request to the
-   Wi-Fi router's local DNS service** (when available) to find
-   the private IPv4 address for `jazz.wifi`.
-3. Opens `http://<local-router-IP>/index.html` directly, so normal page
-   navigation does not require resolving `jazz.wifi` with system DNS.
-4. Rewrites top-level navigation back to `jazz.wifi` onto that local IP.
-5. Provides an optional **Router IP** button if auto-detection fails.
-6. Automatically reconnects and reloads when the Jazz Wi-Fi router
-   becomes reachable again while the app is open.
-7. Preserves the firmware's real Dashboard/Login/Settings as shown by
-   the router, rather than inventing fake status data.
+- On Wi-Fi, learn a LAN address from a direct local DNS lookup for `jazz.wifi`, or the Wi-Fi network's gateway / a manually selected router IP. No D-Link IPs or invented fallback IPs are used.
+- Probe `/index.html` using a Wi-Fi-bound TCP socket and **`Host: jazz.wifi`**.
+- Keep **exactly** `http://jazz.wifi/index.html` in the WebView address and navigation.
+- Use Android WebKit's per-app `ProxyController` pointing to a **127.0.0.1-only HTTP proxy**. Only requests addressed to `jazz.wifi` are allowed. Normal HTTP requests, POST login submissions, cookies, relative URLs, CSS, JavaScript and XMLHttpRequests pass through this local proxy with the original hostname intact.
+- Proxy forwards requests to the private router IP **over the active Wi-Fi Network**, not public Internet, mobile data, or external DNS.
+- The Android device's Private DNS setting is untouched. No VPN is installed, and there is no public proxy or third-party relay.
+- Never show green "Connected" simply because a candidate IP replied; the actual WebView document must complete without a main-frame network error.
+- Home, Refresh, automatic reconnect, Router IP fallback, and Exit preserved.
 
-The app **does not** contain a VPN, DNS override for other apps,
-external proxy, remote login service, or stored router password.
-The router's admin authentication is unchanged.
+**Limitations:** This implementation is HTTP-only because the router URL is HTTP. It requires an Android System WebView implementation with `PROXY_OVERRIDE` support. If that feature is missing, the app asks the user to update Android System WebView. On a router where local DNS/DHCP does not reveal its IP, the user can enter the correct router IP once into **Router IP**; the *WebView's URL* stays `jazz.wifi`. Connection to the correct Jazz router's Wi-Fi is required.
 
-## Controls
-- **Home**: open the portal home page.
-- **Refresh**: refresh the current router page.
-- **Router IP**: specify or reset a saved private router IPv4 address.
-- **Exit**: close the app.
-- Original router menu: all genuine features remain inside the web page.
+## Build
 
-## Limits
-IP access is supported on most MiFi routers, but firmware may require
-the `Host: jazz.wifi` HTTP header or absolute `jazz.wifi` script URLs.
-Those models may still need a firmware-specific adjustment.
-Private DNS **can remain ON**, but actual compatibility needs testing
-against your Jazz device before it can be guaranteed.
+GitHub Actions → **Build Jazz WiFi APK** → Debug APK or unsigned Release. The personal APK can be signed privately using the previous Jazz WiFi certificate.
 
-Since the Jazz router uses HTTP on its local network, connect only to
-your own trusted Wi-Fi; the admin interface is not HTTPS-encrypted.
-
-## Build APK
-In this repository go to **Actions → Build Jazz WiFi APK**, open the
-latest successful run and download `Jazz-WiFi-Debug-APK`.
-
-For normal installation, use the separately **privately signed Release APK**
-produced from the `Jazz-WiFi-Unsigned-Release` GitHub artifact.
-Android target SDK: 35 (Android 15); minimum SDK: 23.
-
-Signing keys and router credentials are never committed to GitHub.
+Google Play Protect may still warn about an unknown sideloaded developer. The app does not disable Play Protect.
