@@ -47,6 +47,8 @@ jobs:
           grep -q 'videoStamp' gps-app/app/src/main/java/com/personal/gpsmapcamera/StampRenderer.java
       - name: Apply v1.2 reference GPS photo-stamp design
         run: python3 gps-payload/apply-reference-v12.py
+      - name: Apply v1.3 video-style home screen
+        run: python3 gps-payload/apply-video-home-v13.py
       - name: Install Java 17
         uses: actions/setup-java@v4
         with:
