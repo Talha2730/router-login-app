@@ -84,11 +84,9 @@ public final class LocalResolver {
             }
         }
         if (gw != null) result.add(gw);
-        // Fallbacks are tried ONLY on the selected Wi-Fi network, never over
-        // cellular; a connected device may use any of these gateway addresses.
-        result.add("192.168.0.1");
-        result.add("192.168.1.1");
-        result.add("192.168.8.1");
+        // Do not guess addresses from unrelated D-Link or Huawei routers.
+        // Only locally learned DNS answers, this Wi-Fi's own DHCP gateway,
+        // and a manually entered IP are eligible.
         return new ArrayList<>(result);
     }
 
