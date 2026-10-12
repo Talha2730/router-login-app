@@ -60,24 +60,24 @@ s=s[:start]+'''        float titleFont=Math.max(10f,14.5f*scale)*1.43f*o.titleTe
         float right=w-edge;
 ''' +s[end:]
 start=s.index("        float base=",s.index("private static void videoStamp"))
-end=s.index("        // Subtle GPS Map Camera tag",start)
+end=s.index("        String tag=",start)
 s=s[:start]+'''        String address=o.address==null?"":o.address.trim();
         if(address.isEmpty())address="Selected GPS Location";
-        p.setColor(Color.WHITE);
-        p.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));
-        p.setTextSize(titleFont);
+        pnt.setColor(Color.WHITE);
+        pnt.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));
+        pnt.setTextSize(titleFont);
         float y=top+paddingTop+titleFont;
-        drawEllipsized(canvas,address,x,y,max,p);
-        p.setTypeface(Typeface.DEFAULT);
-        p.setTextSize(detailFont);
+        drawEllipsized(canvas,address,x,y,max,pnt);
+        pnt.setTypeface(Typeface.DEFAULT);
+        pnt.setTextSize(detailFont);
         y+=titleStep;
         String caption=(o.note==null||o.note.trim().isEmpty())?address:o.note.trim();
-        drawEllipsized(canvas,caption,x,y,max,p);
+        drawEllipsized(canvas,caption,x,y,max,pnt);
         y+=rowStep;
-        drawEllipsized(canvas,String.format(Locale.US,"Lat %.6f° Long %.6f°",o.latitude,o.longitude),x,y,max,p);
+        drawEllipsized(canvas,String.format(Locale.US,"Lat %.6f° Long %.6f°",o.latitude,o.longitude),x,y,max,pnt);
         y+=rowStep;
         String date=new SimpleDateFormat("EEEE, dd/MM/yyyy hh:mm a 'GMT' Z",Locale.US).format(new Date(o.timestamp));
-        drawEllipsized(canvas,date,x,y,max,p);
+        drawEllipsized(canvas,date,x,y,max,pnt);
 ''' +s[end:]
 p.write_text(s)
 print("Dynamic address box and independent title/details controls installed.")
