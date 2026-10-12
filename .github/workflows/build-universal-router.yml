@@ -36,6 +36,20 @@ jobs:
         shell: bash
         run: python3 universal-router-build/after-extract.py
 
+      - name: Apply Universal Router Auto Detect v1.1 patch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/universal-autodetect
+          base64 --decode universal-router-build/autodetect-v11.b64 > /tmp/router-autodetect.tar.xz
+          echo '002bc05a1358e8b4a8803eb680e69a500ac296a2dfda47da891adf097b79b1ae  /tmp/router-autodetect.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/router-autodetect.tar.xz -C /tmp/universal-autodetect
+          patch -p1 < /tmp/universal-autodetect/change.patch
+          cp /tmp/universal-autodetect/RouterAutoDetector.java universal-router/app/src/main/java/com/universalrouter/connect/RouterAutoDetector.java
+          grep -q 'versionCode 2' universal-router/app/build.gradle
+          grep -q 'autoDetectRouter' universal-router/app/src/main/java/com/universalrouter/connect/MainActivity.java
+          test -s universal-router/app/src/main/java/com/universalrouter/connect/RouterAutoDetector.java
+
       - name: Install Java 17
         uses: actions/setup-java@v4
         with:
