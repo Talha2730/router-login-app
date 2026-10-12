@@ -1,0 +1,5 @@
+# Personal APK Backup
+Private, offline Android app. Select any accessible installed application and save its APK (single-base APK) or .apks ZIP (base plus split APKs). Open an .apk/.apks backup to install it on another compatible Android device after granting Android's install permission.
+No account, cloud service or root needed.
+**Limitations:** Does not back up app data, accounts, passwords, permissions, media, or protected files. Split APK archive must stay intact; do not rename .apks to .apk. Android signature, device architecture, minimum Android version, licensing/DRM, app availability and install policies can prevent restoration. For apps downloaded from Google Play, only back up or transfer software you are permitted to copy. Query-all-packages is intended for personal sideloading; Play Store policies impose restrictions.
+Build from `apk-backup` with Java 17 and Gradle 8.9: `gradle :app:assembleDebug`.
