@@ -60,6 +60,14 @@ jobs:
           p.write_text(s.replace(line, ""), encoding="utf-8")
           PY
 
+      - name: Force-disable pinch/double-tap zoom (v1.2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 universal-router-build/disable-zoom-v12.py
+          grep -q 'versionCode 3' universal-router/app/build.gradle
+          grep -q 'lockPageZoom' universal-router/app/src/main/java/com/universalrouter/connect/MainActivity.java
+
       - name: Install Java 17
         uses: actions/setup-java@v4
         with:
