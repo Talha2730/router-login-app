@@ -49,6 +49,16 @@ jobs:
           grep -q 'versionCode 2' universal-router/app/build.gradle
           grep -q 'autoDetectRouter' universal-router/app/src/main/java/com/universalrouter/connect/MainActivity.java
           test -s universal-router/app/src/main/java/com/universalrouter/connect/RouterAutoDetector.java
+          # An open TLS port alone is not proof of a valid HTTPS login.
+          # Avoid automatically choosing an unverifiable HTTPS endpoint.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("universal-router/app/src/main/java/com/universalrouter/connect/RouterAutoDetector.java")
+          s = p.read_text(encoding="utf-8")
+          line = '            add(targets, "https://" + gateway + "/", gateway);\n'
+          assert s.count(line) == 1, "Expected original HTTPS candidate"
+          p.write_text(s.replace(line, ""), encoding="utf-8")
+          PY
 
       - name: Install Java 17
         uses: actions/setup-java@v4
