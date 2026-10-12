@@ -1,7 +1,7 @@
 name: Build Personal APK Backup
 on:
   push:
-    branches: [personal-apk-backup]
+    branches: [personal-apk-backup-direct-install]
     paths:
       - "apk-backup/**"
       - ".github/workflows/build-personal-apk-backup.yml"
@@ -42,7 +42,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -6
       - uses: actions/upload-artifact@v4
         with:
-          name: Personal-APK-Backup-v1
+          name: Personal-APK-Backup-Direct-v1.1
           path: apk-backup/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
           if-no-files-found: error
