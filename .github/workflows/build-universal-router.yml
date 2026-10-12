@@ -32,6 +32,10 @@ jobs:
           test -s universal-router/app/src/main/java/com/universalrouter/connect/RouterResolver.java
           test -s universal-router/app/src/main/java/com/universalrouter/connect/RouterAddress.java
 
+      - name: Apply verified TLS proxy compatibility patch
+        shell: bash
+        run: python3 universal-router-build/after-extract.py
+
       - name: Install Java 17
         uses: actions/setup-java@v4
         with:
