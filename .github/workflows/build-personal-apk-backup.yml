@@ -36,6 +36,8 @@ jobs:
           python3 apk-backup/generate_icon.py
       - name: Upgrade UI and sharing
         run: python3 apk-backup/upgrade-v12.py
+      - name: Enable APK-only backup mode
+        run: python3 apk-backup/upgrade-apk-only-v13.py
       - name: Build APK
         run: |
           cd apk-backup
@@ -48,7 +50,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -6
       - uses: actions/upload-artifact@v4
         with:
-          name: Personal-APK-Backup-Modern-v1.2
+          name: Personal-APK-Backup-Only-v1.3
           path: apk-backup/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
           if-no-files-found: error
