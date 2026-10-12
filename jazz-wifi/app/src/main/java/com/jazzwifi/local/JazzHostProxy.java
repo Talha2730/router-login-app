@@ -266,10 +266,64 @@ public final class JazzHostProxy {
                 else if (hasLength) copyFixed(input, remote, length);
                 remote.flush();
 
-                byte[] buffer = new byte[8192];
-                int amount;
-                while ((amount = response.read(buffer)) != -1) {
-                    output.write(buffer, 0, amount);
+                // Forward response headers, then exactly one HTTP body.
+                // Some router firmwares keep sockets alive even after we ask
+                // for Connection: close, so waiting for EOF would stall pages.
+                String responseStatus = readLine(response, 4096);
+                if (responseStatus == null || !responseStatus.startsWith("HTTP/"))
+                    throw new IOException("Invalid router response");
+                output.write((responseStatus + "\r\n").getBytes(
+                    StandardCharsets.ISO_8859_1));
+                String[] statusParts = responseStatus.split(" ");
+                int responseCode = statusParts.length < 2 ? 0
+                    : Integer.parseInt(statusParts[1]);
+                long responseLength = -1;
+                boolean responseChunked = false;
+                int headerBytes = 0;
+                while (true) {
+                    String line = readLine(response, MAX_HEADERS);
+                    if (line == null) throw new IOException("Incomplete response headers");
+                    headerBytes += line.length() + 2;
+                    if (headerBytes > MAX_HEADERS)
+                        throw new IOException("Router response headers too large");
+                    if (line.isEmpty()) break;
+                    int colon = line.indexOf(':');
+                    if (colon <= 0) throw new IOException("Invalid router response header");
+                    String key = line.substring(0, colon).trim().toLowerCase(Locale.US);
+                    String value = line.substring(colon + 1).trim();
+                    if (key.equals("content-length")) {
+                        try { responseLength = Long.parseLong(value); }
+                        catch (NumberFormatException e) { throw new IOException("Bad response length"); }
+                    }
+                    if (key.equals("transfer-encoding") &&
+                        value.toLowerCase(Locale.US).contains("chunked")) {
+                        responseChunked = true;
+                    }
+                    if (key.equals("connection") || key.equals("keep-alive"))
+                        continue;
+                    output.write((line + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
+                }
+                output.write("Connection: close\r\n\r\n".getBytes(
+                    StandardCharsets.ISO_8859_1));
+                output.flush();
+                if (method.equals("HEAD") || responseCode < 200 ||
+                    responseCode == 204 || responseCode == 304) {
+                    return;
+                }
+                if (responseChunked) {
+                    copyChunked(response, output);
+                } else if (responseLength >= 0) {
+                    // Standard firmware UI resources are small. Stream larger
+                    // downloads without loading data into RAM.
+                    if (responseLength > MAX_BODY) throw new IOException("Excessive response size");
+                    copyFixed(response, output, responseLength);
+                } else {
+                    byte[] buffer = new byte[8192];
+                    int amount;
+                    while ((amount = response.read(buffer)) != -1) {
+                        output.write(buffer, 0, amount);
+                        output.flush();
+                    }
                 }
                 output.flush();
             }
