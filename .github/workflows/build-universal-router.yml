@@ -1,0 +1,97 @@
+name: Build Universal Router Connect APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'universal-router-build/**'
+      - '.github/workflows/build-universal-router.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Universal Router Connect Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Reassemble and verify universal router source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat universal-router-build/source-chunks/0*.txt | base64 --decode > /tmp/universal-router-source.tar.xz
+          echo '88320fac83059744364cd173760e49ba6c2316f7d69986378029716d0c9ccef5  /tmp/universal-router-source.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/universal-router-source.tar.xz
+          test -s universal-router/app/src/main/java/com/universalrouter/connect/MainActivity.java
+          test -s universal-router/app/src/main/java/com/universalrouter/connect/LocalRouterProxy.java
+          test -s universal-router/app/src/main/java/com/universalrouter/connect/RouterResolver.java
+          test -s universal-router/app/src/main/java/com/universalrouter/connect/RouterAddress.java
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compile debug and release
+        working-directory: universal-router
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle --no-daemon --stacktrace :app:assembleDebug :app:assembleRelease
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Verify Android target and APK signature
+        working-directory: universal-router
+        shell: bash
+        run: |
+          set -euo pipefail
+          AAPT="${ANDROID_HOME}/build-tools/35.0.0/aapt"
+          SIGNER="${ANDROID_HOME}/build-tools/35.0.0/apksigner"
+          DEBUG="app/build/outputs/apk/debug/app-debug.apk"
+          RELEASE="app/build/outputs/apk/release/app-release-unsigned.apk"
+          "$AAPT" dump badging "$DEBUG" | grep -E '^(package:|sdkVersion:|targetSdkVersion:)'
+          "$AAPT" dump badging "$DEBUG" | grep -F "targetSdkVersion:'35'"
+          "$SIGNER" verify --verbose "$DEBUG"
+          "$AAPT" dump badging "$RELEASE" | grep -F "targetSdkVersion:'35'"
+          if "$AAPT" dump badging "$RELEASE" | grep -q 'application-debuggable'; then
+            echo "::error::Release APK unexpectedly debuggable"
+            exit 1
+          fi
+
+      - name: Upload installable test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Universal-Router-Debug-APK
+          path: universal-router/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload release for private signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Universal-Router-Unsigned-Release
+          path: universal-router/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 30
