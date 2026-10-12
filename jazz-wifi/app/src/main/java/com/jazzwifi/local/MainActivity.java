@@ -24,6 +24,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.webkit.WebResourceError;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -36,8 +37,15 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.InputStream;
+import java.io.BufferedInputStream;
+import java.io.OutputStream;
+import java.net.Socket;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import androidx.webkit.ProxyConfig;
+import androidx.webkit.ProxyController;
+import androidx.webkit.WebViewFeature;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -46,14 +54,15 @@ import java.util.concurrent.Executors;
 /**
  * Private-DNS-compatible wrapper for a Jazz Wi-Fi router.
  *
- * The app never asks Android to resolve jazz.wifi. It finds the router's
- * LAN address through Wi-Fi DHCP or a direct query to the router's own DNS,
- * then opens http://<private-IP>/index.html using a Wi-Fi-bound WebView.
- * No VPN, external server, DNS settings change, or router credentials storage.
+ * WebView ALWAYS opens the original http://jazz.wifi/index.html URL.
+ * An HTTP proxy listening ONLY on this phone's 127.0.0.1 carries WebView
+ * traffic over the selected Wi-Fi interface, with "Host: jazz.wifi".
+ * The upstream IP is learned privately from DHCP/local-DNS; neither Android
+ * Private DNS settings nor this URL are changed. No external proxy/VPN.
  */
 public final class MainActivity extends Activity {
     private static final String ROUTER_NAME = "jazz.wifi";
-    private static final String[] PATHS = {"/index.html", "/index", "/"};
+    private static final String ROUTER_URL = "http://jazz.wifi/index.html";
     private static final long CHECK_INTERVAL_MS = 12000L;
     private static final int RED = Color.rgb(194, 13, 52);
     private static final int DARK = Color.rgb(26, 46, 60);
@@ -77,6 +86,11 @@ public final class MainActivity extends Activity {
     private String currentPath = "/index.html";
     private String manualIp;
     private boolean hadWebPage = false;
+    private boolean mainFrameFailed = false;
+    private boolean proxyReady = false;
+    private boolean proxySetupPending = false;
+    private JazzHostProxy localProxy;
+    private int proxyPort = -1;
     private long refreshGeneration = 0;
     private final Runnable periodicCheck = new Runnable() {
         @Override public void run() {
@@ -242,7 +256,7 @@ public final class MainActivity extends Activity {
         overlayParams.topMargin = dp(20);
         loading.addView(overlayLabel, overlayParams);
 
-        addressLabel = label("Router address: searching...", 11,
+        addressLabel = label("Router address: http://jazz.wifi/index.html", 11,
             Color.rgb(108, 121, 130), false);
         addressLabel.setGravity(Gravity.CENTER);
         root.addView(addressLabel, new LinearLayout.LayoutParams(-1, dp(34)));
@@ -270,28 +284,49 @@ public final class MainActivity extends Activity {
                 return rewriteOrBlock(request.getUrl());
             }
 
+            @Override public void onPageStarted(WebView view, String url,
+                    android.graphics.Bitmap favicon) {
+                mainFrameFailed = false;
+            }
+
+            @Override public void onReceivedHttpError(WebView view,
+                    WebResourceRequest request, WebResourceResponse response) {
+                if (request.isForMainFrame() && response.getStatusCode() >= 400) {
+                    mainFrameFailed = true;
+                    setStatus("Jazz router HTTP error " + response.getStatusCode(),
+                        RED);
+                    showOverlay("Jazz router page returned HTTP "
+                        + response.getStatusCode()
+                        + ".\nCheck Wi-Fi or refresh.");
+                }
+            }
+
             @Override public boolean shouldOverrideUrlLoading(
                     WebView view, String url) {
                 return rewriteOrBlock(Uri.parse(url));
             }
 
             @Override public void onPageFinished(WebView view, String url) {
-                if (isRouterUrl(url)) {
+                // Only an actual successful router document can set green.
+                // WebView calls onPageFinished even for a network error page.
+                if (isRouterUrl(url) && !mainFrameFailed) {
                     hadWebPage = true;
                     hideOverlay();
-                    setStatus("Connected to Jazz router · Private DNS compatible",
+                    setStatus("Jazz WiFi connected · Private DNS can remain ON",
                         Color.rgb(35, 122, 81));
-                    addressLabel.setText("Local address  ·  " + currentIp
-                        + "  (Wi-Fi only)");
+                    addressLabel.setText(ROUTER_URL);
                 }
             }
 
             @Override public void onReceivedError(WebView view,
                     WebResourceRequest request, WebResourceError error) {
                 if (!request.isForMainFrame()) return;
+                mainFrameFailed = true;
                 connected = false;
-                showOverlay("Router page unavailable.\nReconnecting automatically...");
-                setStatus("Router not responding — automatic retry enabled", RED);
+                hadWebPage = false;
+                showOverlay("Unable to load " + ROUTER_URL
+                    + ".\nChecking local Jazz router connection...");
+                setStatus("Jazz website unavailable — retrying automatically", RED);
                 handler.postDelayed(() -> checkRouter(false), 950);
             }
         });
@@ -301,32 +336,56 @@ public final class MainActivity extends Activity {
         if (uri == null) return true;
         String scheme = uri.getScheme();
         if ("about".equalsIgnoreCase(scheme)) return false;
-        if (!"http".equalsIgnoreCase(scheme)
-                && !"https".equalsIgnoreCase(scheme)) return true;
-        if (currentIp == null) return true;
-        String host = uri.getHost();
-        if (host == null) return true;
-        if (currentIp.equals(host) && "http".equalsIgnoreCase(scheme))
-            return false;
-        if (ROUTER_NAME.equalsIgnoreCase(host)) {
-            Uri rewritten = uri.buildUpon().scheme("http")
-                .encodedAuthority(currentIp).build();
-            browser.loadUrl(rewritten.toString());
-            return true;
-        }
-        Toast.makeText(this, "Only the local Jazz router can open in this app.",
+        if (!"http".equalsIgnoreCase(scheme)) return true;
+        if (ROUTER_NAME.equalsIgnoreCase(uri.getHost())
+                && (uri.getPort() == -1 || uri.getPort() == 80)) return false;
+        Toast.makeText(this, "Only " + ROUTER_URL + " is allowed.",
             Toast.LENGTH_SHORT).show();
         return true;
     }
 
     private boolean isRouterUrl(String url) {
-        if (currentIp == null || url == null) return false;
+        if (url == null) return false;
         try {
             Uri uri = Uri.parse(url);
             return "http".equalsIgnoreCase(uri.getScheme())
-                && currentIp.equals(uri.getHost());
+                && ROUTER_NAME.equalsIgnoreCase(uri.getHost());
+        } catch (Exception ignored) { return false; }
+    }
+
+    private void ensureProxyAndLoad() {
+        if (localProxy == null || proxyPort <= 0) {
+            showOverlay("Local Jazz DNS helper unavailable. Please reopen the app.");
+            return;
+        }
+        if (proxyReady) {
+            browser.loadUrl(ROUTER_URL);
+            return;
+        }
+        if (proxySetupPending) return;
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            setStatus("Android System WebView needs updating for Private DNS",
+                RED);
+            showOverlay("Update Android System WebView in Google Play, then "
+                + "reopen Jazz WiFi. The original address is " + ROUTER_URL);
+            return;
+        }
+        proxySetupPending = true;
+        try {
+            ProxyConfig config = new ProxyConfig.Builder()
+                .addProxyRule("http://127.0.0.1:" + proxyPort)
+                .build();
+            ProxyController.getInstance().setProxyOverride(
+                config, runnable -> handler.post(runnable), () -> {
+                    proxySetupPending = false;
+                    proxyReady = true;
+                    if (visible && connected) browser.loadUrl(ROUTER_URL);
+                });
         } catch (Exception ignored) {
-            return false;
+            proxySetupPending = false;
+            setStatus("Local Jazz WebView proxy could not start", RED);
+            showOverlay("Unable to configure Private DNS helper. "
+                + "Update Android System WebView and retry.");
         }
     }
 
@@ -347,6 +406,13 @@ public final class MainActivity extends Activity {
     @Override protected void onStart() {
         super.onStart();
         visible = true;
+        try {
+            if (localProxy == null) localProxy = new JazzHostProxy();
+            proxyPort = localProxy.start();
+        } catch (Exception ignored) {
+            proxyPort = -1;
+            showOverlay("Unable to start secure local router helper.");
+        }
         monitorWifi();
         checkRouter(true);
         handler.removeCallbacks(periodicCheck);
@@ -388,6 +454,8 @@ public final class MainActivity extends Activity {
                         wifi = null;
                         connected = false;
                         currentIp = null;
+                        hadWebPage = false;
+                        if (localProxy != null) localProxy.setTarget(null, null);
                         showOverlay("Jazz Wi-Fi disconnected.\nConnect again to continue.");
                         setStatus("Waiting for Jazz Wi-Fi...", RED);
                     }
@@ -435,24 +503,33 @@ public final class MainActivity extends Activity {
 
     private RouterEndpoint tryCandidate(Network network, String ip) {
         if (!LocalResolver.isPrivateIpv4(ip)) return null;
-        for (String path : PATHS) {
-            HttpURLConnection connection = null;
-            try {
-                URL url = new URL("http://" + ip + path);
-                connection = (HttpURLConnection) network.openConnection(url);
-                connection.setConnectTimeout(1100);
-                connection.setReadTimeout(1100);
-                connection.setUseCaches(false);
-                connection.setInstanceFollowRedirects(false);
-                int code = connection.getResponseCode();
-                if ((code >= 200 && code <= 399)
-                        || code == 401 || code == 403)
-                    return new RouterEndpoint(ip, path);
-            } catch (Exception ignored) {
-            } finally {
-                if (connection != null) connection.disconnect();
+        // Probe using exact hostname semantics: HTTP Host: jazz.wifi.
+        // A raw Wi-Fi socket bypasses the system Private DNS resolver.
+        try (Socket upstream = network.getSocketFactory().createSocket()) {
+            upstream.connect(new InetSocketAddress(ip, 80), 1600);
+            upstream.setSoTimeout(1600);
+            OutputStream out = upstream.getOutputStream();
+            out.write(("GET /index.html HTTP/1.1\r\n"
+                + "Host: jazz.wifi\r\n"
+                + "Accept: text/html,application/xhtml+xml\r\n"
+                + "Connection: close\r\n\r\n")
+                .getBytes(StandardCharsets.ISO_8859_1));
+            out.flush();
+            InputStream input = new BufferedInputStream(upstream.getInputStream());
+            StringBuilder responseLine = new StringBuilder();
+            for (int i = 0; i < 160; i++) {
+                int ch = input.read();
+                if (ch == -1 || ch == '\n') break;
+                if (ch != '\r') responseLine.append((char) ch);
             }
-        }
+            String header = responseLine.toString();
+            if (!header.startsWith("HTTP/1.")) return null;
+            String[] status = header.split(" ");
+            if (status.length < 2) return null;
+            int code = Integer.parseInt(status[1]);
+            if ((code >= 200 && code < 400) || code == 401 || code == 403)
+                return new RouterEndpoint(ip, "/index.html");
+        } catch (Exception ignored) { }
         return null;
     }
 
@@ -466,7 +543,8 @@ public final class MainActivity extends Activity {
             showOverlay("Connect to your Jazz Wi-Fi.\n"
                 + "The app will open your router automatically.");
             setStatus("Jazz Wi-Fi not connected — waiting...", RED);
-            addressLabel.setText("Router address: not connected");
+            addressLabel.setText(ROUTER_URL);
+            if (localProxy != null) localProxy.setTarget(null, null);
             return;
         }
         final boolean networkChanged = wifi == null || !wifi.equals(wifiNow);
@@ -508,10 +586,12 @@ public final class MainActivity extends Activity {
                 if (found == null) {
                     connected = false;
                     currentIp = null;
+                    hadWebPage = false;
+                    if (localProxy != null) localProxy.setTarget(null, null);
                     showOverlay("Jazz router not found yet.\n"
                         + "Keep Wi-Fi connected or tap Router IP.");
                     setStatus("Router offline — retrying automatically", RED);
-                    addressLabel.setText("Private DNS is unchanged · local IP search");
+                    addressLabel.setText(ROUTER_URL);
                     return;
                 }
 
@@ -520,10 +600,9 @@ public final class MainActivity extends Activity {
                 currentIp = found.ip;
                 currentPath = found.path;
                 connected = true;
-                setStatus("Jazz Wi-Fi found · Private DNS can stay ON",
-                    Color.rgb(35, 122, 81));
-                addressLabel.setText("Local router  ·  " + currentIp
-                    + "  ·  no Internet required");
+                if (localProxy != null) localProxy.setTarget(wifiNow, currentIp);
+                setStatus("Jazz router detected · opening " + ROUTER_NAME, DARK);
+                addressLabel.setText(ROUTER_URL);
                 if (requested || wasDisconnected || switchedRouter || !hadWebPage) {
                     loadHome();
                 }
@@ -537,7 +616,7 @@ public final class MainActivity extends Activity {
             return;
         }
         showOverlay("Opening Jazz router dashboard...");
-        browser.loadUrl("http://" + currentIp + currentPath);
+        ensureProxyAndLoad();
     }
 
     private void editRouterIp() {
@@ -552,8 +631,9 @@ public final class MainActivity extends Activity {
         holder.addView(entry, new LinearLayout.LayoutParams(-1, dp(55)));
         AlertDialog dialog = new AlertDialog.Builder(this)
             .setTitle("Local Jazz router IP")
-            .setMessage("The app detects this automatically. Enter a private "
-                + "router IP only if auto-detection does not work.")
+            .setMessage("The website will ALWAYS remain " + ROUTER_URL
+                + ". This optional IP is used only to contact your Jazz "
+                + "router over Wi-Fi when local DNS cannot resolve its name.")
             .setView(holder)
             .setNeutralButton("Auto-detect", (d, which) -> {
                 saveManualIp("");
@@ -602,6 +682,13 @@ public final class MainActivity extends Activity {
             catch (Exception ignored) { }
         }
         worker.shutdownNow();
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            try {
+                ProxyController.getInstance().clearProxyOverride(
+                    Runnable::run, () -> { });
+            } catch (Exception ignored) { }
+        }
+        if (localProxy != null) localProxy.stop();
         if (browser != null) {
             browser.stopLoading();
             ViewGroup parent = (ViewGroup) browser.getParent();
